@@ -1,0 +1,11 @@
+*.ol
+*.os
+
+/src/liburev.a
+/src/liburev.so*
+
+/examples/urev-cp
+
+config-host.h
+config-host.mak
+config.log
