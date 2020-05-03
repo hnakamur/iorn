@@ -253,6 +253,7 @@ int main(int argc, char *argv[])
 
 	ret = copy_file(&ring, insize);
 
+	fsync(outfd);
 	close(infd);
 	close(outfd);
 	io_uring_queue_exit(&ring);
