@@ -1,6 +1,7 @@
 #ifndef UREV_H
 #define UREV_H
 
+#include <stdio.h>
 #include <liburing.h>
 
 typedef struct urev_queue  urev_queue_t;
@@ -14,6 +15,7 @@ typedef struct urev_timeout_cancel_op   urev_timeout_cancel_op_t;
 struct urev_queue {
     struct io_uring ring;
     int cqe_count;
+    int sqe_count;
 };
 
 static inline int urev_queue_init(unsigned entries, urev_queue_t *queue,
@@ -30,7 +32,18 @@ static inline void urev_queue_exit(urev_queue_t *queue)
 
 static inline int urev_submit(urev_queue_t *queue)
 {
-    return io_uring_submit(&queue->ring);
+    int ret;
+
+    // fprintf(stderr, "urev_submit start, sqe_count=%d\n", queue->sqe_count);
+    if (queue->sqe_count == 0) {
+        return 0;
+    }
+    ret = io_uring_submit(&queue->ring);
+    // fprintf(stderr, "urev_submit start, io_uring_submit ret=%d\n", ret);
+    if (ret > 0) {
+        queue->sqe_count -= ret;
+    }
+    return ret;
 }
 
 /**
@@ -134,23 +147,42 @@ int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op);
  */
 int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
 
-static inline void _urev_queue_cq_advance(urev_queue_t *queue)
-{
-	io_uring_cq_advance(&queue->ring, queue->cqe_count);
-	queue->cqe_count = 0;
-}
-
 void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe);
 
 static inline void urev_handle_completions(urev_queue_t *queue)
 {
     struct io_uring_cqe *cqe;
     unsigned head;
+    unsigned cqe_count;
+
+    fprintf(stderr, "urev_handle_completions start\n");
+    cqe_count = 0;
     io_uring_for_each_cqe(&queue->ring, head, cqe) {
-        queue->cqe_count++;
+        cqe_count++;
+        fprintf(stderr, "io_uring_for_each_cqe, cqe=%p, cqe_count=%d\n", cqe, cqe_count);
         urev_handle_completion(queue, cqe);
     }
-	_urev_queue_cq_advance(queue);
+    io_uring_cq_advance(&queue->ring, cqe_count);
+}
+
+static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
+{
+    struct io_uring_cqe *cqe;
+    int ret;
+
+    fprintf(stderr, "urev_wait_and_handle_completions start\n");
+    ret = io_uring_wait_cqe(&queue->ring, &cqe);
+    fprintf(stderr, "after io_uring_wait_cqe, cqe=%p\n", cqe);
+    if (cqe != NULL) {
+        urev_handle_completion(queue, cqe);
+        io_uring_cq_advance(&queue->ring, 1);
+    }
+    if (ret < 0) {
+        return ret;
+    }
+
+    urev_handle_completions(queue);
+    return 0;
 }
 
 #endif

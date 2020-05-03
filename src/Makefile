@@ -61,4 +61,4 @@ $(liburev_objs): include/urev.h
 
 clean:
 	@rm -f $(all_targets) $(liburev_objs) $(liburev_sobjs) $(soname).new
-	@rm -f *.so* *.a *.o
+	@rm -f *.so* *.a *.o core
