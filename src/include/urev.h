@@ -149,7 +149,7 @@ int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
 
 void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe);
 
-static inline void urev_handle_completions(urev_queue_t *queue)
+static inline void urev_peek_and_handle_completions(urev_queue_t *queue)
 {
     struct io_uring_cqe *cqe;
     unsigned head;
@@ -181,7 +181,7 @@ static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
         return ret;
     }
 
-    urev_handle_completions(queue);
+    urev_peek_and_handle_completions(queue);
     return 0;
 }
 
