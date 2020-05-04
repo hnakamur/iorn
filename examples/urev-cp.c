@@ -27,11 +27,6 @@ typedef struct copy_ctx {
     off_t write_left;
 } copy_ctx_t;
 
-typedef struct read_or_write_ctx {
-    off_t first_offset;
-    size_t first_len;
-} read_or_write_ctx_t;
-
 static int queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 
 static int setup_context(unsigned entries, urev_queue_t *queue)
@@ -108,9 +103,14 @@ static int handle_read_write_common(urev_read_or_write_op_t *op)
         fprintf(stderr, "handle_read_write_common, write_left=%ld\n", ctx->write_left);
     }
 
-    if (ret != op->nbytes) {
+    if (ret > 0 && ret != op->nbytes) {
         /* Short read, adjust and requeue */
         fprintf(stderr, "short read/write optype=%d, cqe->res=%d, op->nbytes=%d\n", op->common.opcode, ret, op->nbytes);
+        if (op->saved_buf == NULL) {
+            op->saved_buf = op->buf;
+            op->saved_nbytes = op->nbytes;
+            op->saved_offset = op->offset;
+        }
         op->buf += ret;
         op->nbytes -= ret;
         op->offset += ret;
@@ -125,6 +125,12 @@ static int handle_read_write_common(urev_read_or_write_op_t *op)
             return ret;
         }
         return 1;
+    }
+
+    if (op->nbytes == 0 && op->saved_buf != NULL) {
+        op->buf = op->saved_buf;
+        op->nbytes = op->saved_nbytes;
+        op->offset = op->saved_offset;
     }
 
     // fprintf(stderr, "full read/write in handle_read_write_common, opcode=%d\n",  op->opcode);
@@ -150,22 +156,19 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
 static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
 {
     urev_read_or_write_op_t *op;
-    read_or_write_ctx_t *rw_ctx;
     int ret;
 
-    op = malloc(sizeof(*op) + sizeof(*rw_ctx) + size);
+    op = calloc(1, sizeof(*op) + size);
     if (!op) {
         return -ENOMEM;
     }
 
-    rw_ctx = (read_or_write_ctx_t *)(op + 1);
     op->common.ctx = ctx;
     op->handler = handle_read_completion;
     op->fd = ctx->infd;
-    op->buf = rw_ctx + 1;
-    op->nbytes = rw_ctx->first_len = size;
-    fprintf(stderr, "queue_read, op->nbytes=%d, rw_ctx->first_len=%ld, size=%ld\n", op->nbytes, rw_ctx->first_len, size);
-    op->offset = rw_ctx->first_offset = offset;
+    op->buf = op + 1;
+    op->nbytes = size;
+    op->offset = offset;
     ret = urev_prep_read(queue, op);
     if (ret < 0) {
         fprintf(stderr, "urev_prep_read: %s\n", strerror(-ret));
@@ -192,18 +195,13 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
 
 static int queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
-    read_or_write_ctx_t *rw_ctx;
     copy_ctx_t *ctx;
     int ret;
 
     // fprintf(stderr, "queue_write start, op=%p\n", op);
-    rw_ctx = (read_or_write_ctx_t *)(op + 1);
     ctx = op->common.ctx;
     op->handler = handle_write_completion;
     op->fd = ctx->outfd;
-    op->buf = rw_ctx + 1;
-    op->offset = rw_ctx->first_offset;
-    op->nbytes = rw_ctx->first_len;
     // fprintf(stderr, "before urev_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
     ret = urev_prep_write(queue, op);
     if (ret < 0) {
