@@ -137,70 +137,70 @@ int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op)
     return 0;
 }
 
-static inline void urev_handle_read(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_read(urev_op_common_t *common)
 {
-    urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) common;
+    op->handler(op);
 }
 
-static inline void urev_handle_write(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_write(urev_op_common_t *common)
 {
-    urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) common;
+    op->handler(op);
 }
 
-static inline void urev_handle_readv(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_readv(urev_op_common_t *common)
 {
-    urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) common;
+    op->handler(op);
 }
 
-static inline void urev_handle_writev(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_writev(urev_op_common_t *common)
 {
-    urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) common;
+    op->handler(op);
 }
 
-static inline void urev_handle_timeout(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_timeout(urev_op_common_t *common)
 {
-    urev_timeout_op_t *op = (urev_timeout_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_timeout_op_t *op = (urev_timeout_op_t *) common;
+    op->handler(op);
 }
 
-static inline void urev_handle_timeout_remove(struct io_uring_cqe *cqe, void *cqe_data)
+static inline void urev_handle_timeout_remove(urev_op_common_t *common)
 {
-    urev_timeout_cancel_op_t *op = (urev_timeout_cancel_op_t *) cqe_data;
-    op->handler(op, cqe);
+    urev_timeout_cancel_op_t *op = (urev_timeout_cancel_op_t *) common;
+    op->handler(op);
 }
 
 void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
 {
-    void *cqe_data;
-    int opcode;
+    urev_op_common_t *op;
 
-    cqe_data = io_uring_cqe_get_data(cqe);
-    opcode = ((urev_op_common_t *) cqe_data)->opcode;
-    switch (opcode) {
+    op = (urev_op_common_t *) io_uring_cqe_get_data(cqe);
+    op->cqe_res = cqe->res;
+
+    switch (op->opcode) {
     case IORING_OP_READ:
-        urev_handle_read(cqe, cqe_data);
+        urev_handle_read(op);
         break;
     case IORING_OP_WRITE:
-        urev_handle_write(cqe, cqe_data);
+        urev_handle_write(op);
         break;
     case IORING_OP_READV:
-        urev_handle_readv(cqe, cqe_data);
+        urev_handle_readv(op);
         break;
     case IORING_OP_WRITEV:
-        urev_handle_writev(cqe, cqe_data);
+        urev_handle_writev(op);
         break;
     case IORING_OP_TIMEOUT:
-        urev_handle_timeout(cqe, cqe_data);
+        urev_handle_timeout(op);
         break;
     case IORING_OP_TIMEOUT_REMOVE:
-        urev_handle_timeout_remove(cqe, cqe_data);
+        urev_handle_timeout_remove(op);
         break;
     default:
-        fprintf(stderr, "unsupported opcode in urev_handle_completion, opcode=%d\n", opcode);
+        fprintf(stderr, "unsupported opcode in urev_handle_completion, opcode=%d\n", op->opcode);
         break;
     }
 }

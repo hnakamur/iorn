@@ -4,25 +4,23 @@
 #include <stdio.h>
 #include <liburing.h>
 
-typedef struct urev_queue  urev_queue_t;
+typedef struct urev_queue urev_queue_t;
 
-typedef struct urev_op_common           urev_op_common_t;
-typedef struct urev_accept_op           urev_accept_op_t;
-typedef struct urev_read_or_write_op    urev_read_or_write_op_t;
-typedef struct urev_readv_or_writev_op  urev_readv_or_writev_op_t;
-typedef struct urev_timeout_op          urev_timeout_op_t;
-typedef struct urev_timeout_cancel_op   urev_timeout_cancel_op_t;
+typedef struct urev_op_common          urev_op_common_t;
+typedef struct urev_accept_op          urev_accept_op_t;
+typedef struct urev_read_or_write_op   urev_read_or_write_op_t;
+typedef struct urev_readv_or_writev_op urev_readv_or_writev_op_t;
+typedef struct urev_timeout_op         urev_timeout_op_t;
+typedef struct urev_timeout_cancel_op  urev_timeout_cancel_op_t;
 
 struct urev_queue {
     struct io_uring ring;
-    int cqe_count;
-    int sqe_count;
+    int             sqe_count;
 };
 
 static inline int urev_queue_init(unsigned entries, urev_queue_t *queue,
     unsigned flags)
 {
-    queue->cqe_count = 0;
     return io_uring_queue_init(entries, &queue->ring, flags);
 }
 
@@ -50,83 +48,93 @@ static inline int urev_submit(urev_queue_t *queue)
 /**
  * completion handler type for a accept operation.
  * @param [in] op     a accept operation.
- * @param [in] cqe    a completion queue entry.
  */
-typedef void (*urev_accept_handler_t)(urev_accept_op_t *op, struct io_uring_cqe *cqe);
+typedef void (*urev_accept_handler_t)(urev_accept_op_t *op);
 
 /**
  * completion handler type for a read or operation.
  * @param [in] op     a read or write operation.
- * @param [in] cqe    a completion queue entry.
  */
-typedef void (*urev_read_or_write_handler_t)(urev_read_or_write_op_t *op, struct io_uring_cqe *cqe);
+typedef void (*urev_read_or_write_handler_t)(urev_read_or_write_op_t *op);
 
 /**
  * completion handler type for a readv or writev operation.
  * @param [in] op     a readv or writev operation.
- * @param [in] cqe    a completion queue entry.
  */
-typedef void (*urev_readv_or_writev_handler_t)(urev_readv_or_writev_op_t *op, struct io_uring_cqe *cqe);
+typedef void (*urev_readv_or_writev_handler_t)(urev_readv_or_writev_op_t *op);
 
 /**
  * completion handler type for a timeout operation.
  * @param [in] op     a timeout operation.
- * @param [in] cqe    a completion queue entry.
  */
-typedef void (*urev_timeout_handler_t)(urev_timeout_op_t *op, struct io_uring_cqe *cqe);
+typedef void (*urev_timeout_handler_t)(urev_timeout_op_t *op);
 /**
  * completion handler type for a timeout_remove operation.
  * @param [in] op     a timeout_remove operation.
- * @param [in] cqe    a completion queue entry.
  */
-typedef void (*urev_timeout_cancel_handler_t)(urev_timeout_cancel_op_t *op, struct io_uring_cqe *cqe);
+typedef void (*urev_timeout_cancel_handler_t)(urev_timeout_cancel_op_t *op);
 
 struct urev_op_common {
-    int opcode;
+    int           opcode;
     urev_queue_t *queue;
-    void *ctx;
+    int32_t       cqe_res;
+    void         *ctx;
 };
 
 struct urev_accept_op {
-    urev_op_common_t common; // must be the first field
-    urev_accept_handler_t handler;
-    int fd;
+    urev_op_common_t       common; // must be the first field
+    urev_accept_handler_t  handler;
+
+    int              fd;
     struct sockaddr *addr;
-    socklen_t *addrlen;
-    int flags;
+    socklen_t       *addrlen;
+    int             flags;
 };
 
 struct urev_read_or_write_op {
-    urev_op_common_t common; // must be the first field
-    urev_read_or_write_handler_t handler;
-    int fd;
-    void *buf;
-    unsigned nbytes;
-    off_t offset;
+    urev_op_common_t              common; // must be the first field
+    urev_read_or_write_handler_t  handler;
+
+    int       fd;
+    void     *buf;
+    unsigned  nbytes;
+    off_t     offset;
+
+    void     *saved_buf;
+    unsigned  saved_nbytes;
+    off_t     saved_offset;
 };
 
 struct urev_readv_or_writev_op {
-    urev_op_common_t common; // must be the first field
+    urev_op_common_t               common; // must be the first field
     urev_readv_or_writev_handler_t handler;
-    int fd;
-    int nr_vecs;
+
+    int           fd;
+    int           nr_vecs;
     struct iovec *iovecs;
-    off_t offset;
+    off_t         offset;
+
+    int           saved_nr_vecs;
+    struct iovec *saved_iovecs;
+    void         *saved_iov_base;
+    off_t         saved_offset;
 };
 
 struct urev_timeout_op {
-    urev_op_common_t common; // must be the first field
+    urev_op_common_t       common; // must be the first field
     urev_timeout_handler_t handler;
+
     struct timespec ts;
-    unsigned count;
-    unsigned flags;
+    unsigned        count;
+    unsigned        flags;
 };
 
 struct urev_timeout_cancel_op {
-    urev_op_common_t common; // must be the first field
+    urev_op_common_t              common; // must be the first field
     urev_timeout_cancel_handler_t handler;
-    struct urev_timeout_op *target_op;
-    unsigned flags;
+
+    urev_timeout_op_t *target_op;
+    unsigned           flags;
 };
 
 int urev_queue_accept(urev_queue_t *queue, struct urev_accept_op *op);

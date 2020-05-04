@@ -72,16 +72,15 @@ static int get_file_size(int fd, off_t *size)
 /**
  * Helper function for handling common part of read or write operation completion.
  * @param [in,out] op   a read or write operation.
- * @param [in] cqe      a completion queue entry.
  * @return 1 if handled, 0 if not handled, < 0 if error.
  */
-static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring_cqe *cqe)
+static int handle_read_write_common(urev_read_or_write_op_t *op)
 {
     int ret;
     copy_ctx_t *ctx;
 
     // fprintf(stderr, "handle_read_write_common start, op=%p\n", op);
-    ret = cqe->res;
+    ret = op->common.cqe_res;
     if (ret < 0) {
         if (ret == -EAGAIN) {
             if (op->common.opcode == IORING_OP_READ) {
@@ -96,7 +95,7 @@ static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring
             }
         }
         fprintf(stderr, "read failed: %s\n",
-                strerror(-cqe->res));
+                strerror(-ret));
         return ret;
     }
 
@@ -132,12 +131,12 @@ static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring
     return 0;
 }
 
-static void handle_read_completion(urev_read_or_write_op_t *op, struct io_uring_cqe *cqe)
+static void handle_read_completion(urev_read_or_write_op_t *op)
 {
     int ret;
 
     // fprintf(stderr, "handle_read_completion start, op=%p\n", op);
-    ret = handle_read_write_common(op, cqe);
+    ret = handle_read_write_common(op);
     if (ret != 0) {
         return;
     }
@@ -174,12 +173,12 @@ static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t of
     return 0;
 }
 
-static void handle_write_completion(urev_read_or_write_op_t *op, struct io_uring_cqe *cqe)
+static void handle_write_completion(urev_read_or_write_op_t *op)
 {
     int ret;
 
     // fprintf(stderr, "handle_write_completion start, op=%p\n", op);
-    ret = handle_read_write_common(op, cqe);
+    ret = handle_read_write_common(op);
     // fprintf(stderr, "handle_write_completion, ret from common=%d\n", ret);
     if (ret != 0) {
         return;
