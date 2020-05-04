@@ -78,6 +78,7 @@ struct urev_op_common {
     int           opcode;
     urev_queue_t *queue;
     int32_t       cqe_res;
+    int           err_code;
     void         *ctx;
 };
 
@@ -100,6 +101,7 @@ struct urev_read_or_write_op {
     unsigned  nbytes;
     off_t     offset;
 
+    unsigned  nbytes_left;
     void     *saved_buf;
     unsigned  saved_nbytes;
     off_t     saved_offset;
@@ -114,6 +116,7 @@ struct urev_readv_or_writev_op {
     struct iovec *iovecs;
     off_t         offset;
 
+    size_t        nbytes_left;
     int           saved_nr_vecs;
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
@@ -136,6 +139,13 @@ struct urev_timeout_cancel_op {
     urev_timeout_op_t *target_op;
     unsigned           flags;
 };
+
+static inline void urev_op_set_err_code(urev_op_common_t *common, int err_code)
+{
+    if (common->err_code == 0) {
+        common->err_code = err_code;
+    }
+}
 
 int urev_queue_accept(urev_queue_t *queue, struct urev_accept_op *op);
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
@@ -189,5 +199,8 @@ static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
     urev_peek_and_handle_completions(queue);
     return 0;
 }
+
+void urev_handle_short_read(urev_read_or_write_op_t *op);
+void urev_handle_short_write(urev_read_or_write_op_t *op);
 
 #endif

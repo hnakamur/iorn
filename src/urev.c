@@ -53,6 +53,7 @@ int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
     io_uring_prep_read(sqe, op->fd, op->buf, op->nbytes, op->offset);
     op->common.opcode = sqe->opcode;
     op->common.queue = queue;
+    op->nbytes_left = op->nbytes;
     io_uring_sqe_set_data(sqe, op);
     return 0;
 }
@@ -69,8 +70,87 @@ int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     io_uring_prep_write(sqe, op->fd, op->buf, op->nbytes, op->offset);
     op->common.opcode = sqe->opcode;
     op->common.queue = queue;
+    op->nbytes_left = op->nbytes;
     io_uring_sqe_set_data(sqe, op);
     return 0;
+}
+
+void urev_handle_short_read(urev_read_or_write_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_read(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+    
+    op->nbytes_left -= res;
+    if (op->nbytes_left) {
+        if (op->saved_buf == NULL) {
+            op->saved_buf = op->buf;
+            op->saved_nbytes = op->nbytes;
+            op->saved_offset = op->offset;
+        }
+        op->buf += res;
+        op->nbytes -= res;
+        op->offset += res;
+        res = urev_prep_read(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes == 0 && op->saved_buf != NULL) {
+        op->buf = op->saved_buf;
+        op->nbytes = op->saved_nbytes;
+        op->offset = op->saved_offset;
+    }
+}
+
+void urev_handle_short_write(urev_read_or_write_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_write(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+    
+    op->nbytes_left -= res;
+    if (op->nbytes_left) {
+        if (op->saved_buf == NULL) {
+            op->saved_buf = op->buf;
+            op->saved_nbytes = op->nbytes;
+            op->saved_offset = op->offset;
+        }
+        op->buf += res;
+        op->nbytes -= res;
+        op->offset += res;
+        res = urev_prep_write(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes == 0 && op->saved_buf != NULL) {
+        op->buf = op->saved_buf;
+        op->nbytes = op->saved_nbytes;
+        op->offset = op->saved_offset;
+    }
 }
 
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
@@ -179,6 +259,9 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
 
     op = (urev_op_common_t *) io_uring_cqe_get_data(cqe);
     op->cqe_res = cqe->res;
+    if (cqe->res < 0) {
+        urev_op_set_err_code(op, -cqe->res);
+    }
 
     switch (op->opcode) {
     case IORING_OP_READ:

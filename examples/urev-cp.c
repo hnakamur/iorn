@@ -20,14 +20,13 @@
 #define BS    (32*1024)
 
 typedef struct copy_ctx {
-    int infd;
-    int outfd;
+    int   infd;
+    int   outfd;
     off_t insize;
     off_t read_left;
     off_t write_left;
+    int   err_code;
 } copy_ctx_t;
-
-static int queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 
 static int setup_context(unsigned entries, urev_queue_t *queue)
 {
@@ -64,86 +63,68 @@ static int get_file_size(int fd, off_t *size)
     return -1;
 }
 
-/**
- * Helper function for handling common part of read or write operation completion.
- * @param [in,out] op   a read or write operation.
- * @return 1 if handled, 0 if not handled, < 0 if error.
- */
-static int handle_read_write_common(urev_read_or_write_op_t *op)
+static inline void set_err_code(copy_ctx_t *ctx, int err_code)
 {
+    if (err_code && !ctx->err_code) {
+        ctx->err_code = err_code;
+    }
+}
+
+static inline void copy_err_code_from_op(copy_ctx_t *ctx, urev_read_or_write_op_t *op)
+{
+    set_err_code(ctx, op->common.err_code);
+}
+
+static void handle_write_completion(urev_read_or_write_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    urev_handle_short_write(op);
+    copy_err_code_from_op(ctx, op);
+    if (op->nbytes_left) {
+        return;
+    }
+
+    /*
+     * All done. nothing else to do for write.
+     */
+    ctx->write_left -= op->nbytes;
+    free(op);
+}
+
+static void queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
+{
+    copy_ctx_t *ctx;
     int ret;
 
-    // fprintf(stderr, "handle_read_write_common start, op=%p\n", op);
-    ret = op->common.cqe_res;
+    // fprintf(stderr, "queue_write start, op=%p\n", op);
+    ctx = op->common.ctx;
+    op->handler = handle_write_completion;
+    op->fd = ctx->outfd;
+    // fprintf(stderr, "before urev_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
+    ret = urev_prep_write(queue, op);
     if (ret < 0) {
-        if (ret == -EAGAIN) {
-            if (op->common.opcode == IORING_OP_READ) {
-                ret = urev_prep_read(op->common.queue, op);
-            } else {
-                ret = urev_prep_write(op->common.queue, op);
-            }
-            if (ret < 0) {
-                fprintf(stderr, "urev_prep_read after EAGAIN: %s\n",
-                        strerror(-ret));
-                return ret;
-            }
-        }
-        fprintf(stderr, "read failed: %s\n",
-                strerror(-ret));
-        return ret;
+        fprintf(stderr, "urev_prep_write: %s\n", strerror(-ret));
     }
-
-    if (ret > 0 && ret != op->nbytes) {
-        /* Short read, adjust and requeue */
-        fprintf(stderr, "short read/write optype=%d, cqe->res=%d, op->nbytes=%d\n", op->common.opcode, ret, op->nbytes);
-        if (op->saved_buf == NULL) {
-            op->saved_buf = op->buf;
-            op->saved_nbytes = op->nbytes;
-            op->saved_offset = op->offset;
-        }
-        op->buf += ret;
-        op->nbytes -= ret;
-        op->offset += ret;
-        if (op->common.opcode == IORING_OP_READ) {
-            ret = urev_prep_read(op->common.queue, op);
-        } else {
-            ret = urev_prep_write(op->common.queue, op);
-        }
-        if (ret < 0) {
-            fprintf(stderr, "urev_prep_read after short read: %s\n",
-                    strerror(-ret));
-            return ret;
-        }
-        return 1;
-    }
-
-    if (op->nbytes == 0 && op->saved_buf != NULL) {
-        op->buf = op->saved_buf;
-        op->nbytes = op->saved_nbytes;
-        op->offset = op->saved_offset;
-    }
-
-    // fprintf(stderr, "full read/write in handle_read_write_common, opcode=%d\n",  op->opcode);
-    return 0;
 }
 
 static void handle_read_completion(urev_read_or_write_op_t *op)
 {
-    int ret;
     copy_ctx_t *ctx;
 
-    // fprintf(stderr, "handle_read_completion start, op=%p\n", op);
-    ret = handle_read_write_common(op);
-    if (ret != 0) {
+    ctx = op->common.ctx;
+    urev_handle_short_read(op);
+    copy_err_code_from_op(ctx, op);
+    if (op->nbytes_left) {
         return;
     }
 
     /*
      * All done.  queue up corresponding write.
      */
-    ctx = op->common.ctx;
     ctx->read_left -= op->nbytes;
-    ret = queue_write(op->common.queue, op);
+    queue_write(op->common.queue, op);
 }
 
 static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
@@ -165,45 +146,9 @@ static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t of
     ret = urev_prep_read(queue, op);
     if (ret < 0) {
         fprintf(stderr, "urev_prep_read: %s\n", strerror(-ret));
+        return ret;
     }
     return 0;
-}
-
-static void handle_write_completion(urev_read_or_write_op_t *op)
-{
-    int ret;
-    copy_ctx_t *ctx;
-
-    // fprintf(stderr, "handle_write_completion start, op=%p\n", op);
-    ret = handle_read_write_common(op);
-    // fprintf(stderr, "handle_write_completion, ret from common=%d\n", ret);
-    if (ret != 0) {
-        return;
-    }
-
-    /*
-     * All done. nothing else to do for write.
-     */
-    ctx = op->common.ctx;
-    ctx->write_left -= op->nbytes;
-    free(op);
-}
-
-static int queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
-{
-    copy_ctx_t *ctx;
-    int ret;
-
-    // fprintf(stderr, "queue_write start, op=%p\n", op);
-    ctx = op->common.ctx;
-    op->handler = handle_write_completion;
-    op->fd = ctx->outfd;
-    // fprintf(stderr, "before urev_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
-    ret = urev_prep_write(queue, op);
-    if (ret < 0) {
-        fprintf(stderr, "urev_prep_write: %s\n", strerror(-ret));
-    }
-    return ret;
 }
 
 static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
