@@ -72,7 +72,6 @@ static int get_file_size(int fd, off_t *size)
 static int handle_read_write_common(urev_read_or_write_op_t *op)
 {
     int ret;
-    copy_ctx_t *ctx;
 
     // fprintf(stderr, "handle_read_write_common start, op=%p\n", op);
     ret = op->common.cqe_res;
@@ -92,15 +91,6 @@ static int handle_read_write_common(urev_read_or_write_op_t *op)
         fprintf(stderr, "read failed: %s\n",
                 strerror(-ret));
         return ret;
-    }
-
-    ctx = op->common.ctx;
-    if (op->common.opcode == IORING_OP_READ) {
-        ctx->read_left -= ret;
-        fprintf(stderr, "handle_read_read_common, read_left=%ld\n", ctx->read_left);
-    } else {
-        ctx->write_left -= ret;
-        fprintf(stderr, "handle_read_write_common, write_left=%ld\n", ctx->write_left);
     }
 
     if (ret > 0 && ret != op->nbytes) {
@@ -140,6 +130,7 @@ static int handle_read_write_common(urev_read_or_write_op_t *op)
 static void handle_read_completion(urev_read_or_write_op_t *op)
 {
     int ret;
+    copy_ctx_t *ctx;
 
     // fprintf(stderr, "handle_read_completion start, op=%p\n", op);
     ret = handle_read_write_common(op);
@@ -150,6 +141,8 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
     /*
      * All done.  queue up corresponding write.
      */
+    ctx = op->common.ctx;
+    ctx->read_left -= op->nbytes;
     ret = queue_write(op->common.queue, op);
 }
 
@@ -179,6 +172,7 @@ static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t of
 static void handle_write_completion(urev_read_or_write_op_t *op)
 {
     int ret;
+    copy_ctx_t *ctx;
 
     // fprintf(stderr, "handle_write_completion start, op=%p\n", op);
     ret = handle_read_write_common(op);
@@ -190,6 +184,8 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
     /*
      * All done. nothing else to do for write.
      */
+    ctx = op->common.ctx;
+    ctx->write_left -= op->nbytes;
     free(op);
 }
 
