@@ -6,6 +6,7 @@
 
 typedef struct urev_queue  urev_queue_t;
 
+typedef struct urev_op_common           urev_op_common_t;
 typedef struct urev_accept_op           urev_accept_op_t;
 typedef struct urev_read_or_write_op    urev_read_or_write_op_t;
 typedef struct urev_readv_or_writev_op  urev_readv_or_writev_op_t;
@@ -80,10 +81,14 @@ typedef void (*urev_timeout_handler_t)(urev_timeout_op_t *op, struct io_uring_cq
  */
 typedef void (*urev_timeout_cancel_handler_t)(urev_timeout_cancel_op_t *op, struct io_uring_cqe *cqe);
 
-struct urev_accept_op {
-    int opcode; // must be the first field
+struct urev_op_common {
+    int opcode;
     urev_queue_t *queue;
     void *ctx;
+};
+
+struct urev_accept_op {
+    urev_op_common_t common; // must be the first field
     urev_accept_handler_t handler;
     int fd;
     struct sockaddr *addr;
@@ -92,9 +97,7 @@ struct urev_accept_op {
 };
 
 struct urev_read_or_write_op {
-    int opcode; // must be the first field
-    urev_queue_t *queue;
-    void *ctx;
+    urev_op_common_t common; // must be the first field
     urev_read_or_write_handler_t handler;
     int fd;
     void *buf;
@@ -103,9 +106,7 @@ struct urev_read_or_write_op {
 };
 
 struct urev_readv_or_writev_op {
-    int opcode; // must be the first field
-    urev_queue_t *queue;
-    void *ctx;
+    urev_op_common_t common; // must be the first field
     urev_readv_or_writev_handler_t handler;
     int fd;
     int nr_vecs;
@@ -114,9 +115,7 @@ struct urev_readv_or_writev_op {
 };
 
 struct urev_timeout_op {
-    int opcode; // must be the first field
-    urev_queue_t *queue;
-    void *ctx;
+    urev_op_common_t common; // must be the first field
     urev_timeout_handler_t handler;
     struct timespec ts;
     unsigned count;
@@ -124,9 +123,7 @@ struct urev_timeout_op {
 };
 
 struct urev_timeout_cancel_op {
-    int opcode; // must be the first field
-    urev_queue_t *queue;
-    void *ctx;
+    urev_op_common_t common; // must be the first field
     urev_timeout_cancel_handler_t handler;
     struct urev_timeout_op *target_op;
     unsigned flags;

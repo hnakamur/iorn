@@ -84,10 +84,10 @@ static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring
     ret = cqe->res;
     if (ret < 0) {
         if (ret == -EAGAIN) {
-            if (op->opcode == IORING_OP_READ) {
-                ret = urev_prep_read(op->queue, op);
+            if (op->common.opcode == IORING_OP_READ) {
+                ret = urev_prep_read(op->common.queue, op);
             } else {
-                ret = urev_prep_write(op->queue, op);
+                ret = urev_prep_write(op->common.queue, op);
             }
             if (ret < 0) {
                 fprintf(stderr, "urev_prep_read after EAGAIN: %s\n",
@@ -100,8 +100,8 @@ static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring
         return ret;
     }
 
-    ctx = op->ctx;
-    if (op->opcode == IORING_OP_READ) {
+    ctx = op->common.ctx;
+    if (op->common.opcode == IORING_OP_READ) {
         ctx->read_left -= ret;
         fprintf(stderr, "handle_read_read_common, read_left=%ld\n", ctx->read_left);
     } else {
@@ -111,14 +111,14 @@ static int handle_read_write_common(urev_read_or_write_op_t *op, struct io_uring
 
     if (ret != op->nbytes) {
         /* Short read, adjust and requeue */
-        fprintf(stderr, "short read/write op->optype=%d, cqe->res=%d, op->nbytes=%d\n", op->opcode, ret, op->nbytes);
+        fprintf(stderr, "short read/write optype=%d, cqe->res=%d, op->nbytes=%d\n", op->common.opcode, ret, op->nbytes);
         op->buf += ret;
         op->nbytes -= ret;
         op->offset += ret;
-        if (op->opcode == IORING_OP_READ) {
-            ret = urev_prep_read(op->queue, op);
+        if (op->common.opcode == IORING_OP_READ) {
+            ret = urev_prep_read(op->common.queue, op);
         } else {
-            ret = urev_prep_write(op->queue, op);
+            ret = urev_prep_write(op->common.queue, op);
         }
         if (ret < 0) {
             fprintf(stderr, "urev_prep_read after short read: %s\n",
@@ -145,7 +145,7 @@ static void handle_read_completion(urev_read_or_write_op_t *op, struct io_uring_
     /*
      * All done.  queue up corresponding write.
      */
-    ret = queue_write(op->queue, op);
+    ret = queue_write(op->common.queue, op);
 }
 
 static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
@@ -160,7 +160,7 @@ static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t of
     }
 
     rw_ctx = (read_or_write_ctx_t *)(op + 1);
-    op->ctx = ctx;
+    op->common.ctx = ctx;
     op->handler = handle_read_completion;
     op->fd = ctx->infd;
     op->buf = rw_ctx + 1;
@@ -199,7 +199,7 @@ static int queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
 
     // fprintf(stderr, "queue_write start, op=%p\n", op);
     rw_ctx = (read_or_write_ctx_t *)(op + 1);
-    ctx = op->ctx;
+    ctx = op->common.ctx;
     op->handler = handle_write_completion;
     op->fd = ctx->outfd;
     op->buf = rw_ctx + 1;
