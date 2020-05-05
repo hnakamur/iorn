@@ -296,12 +296,10 @@ void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, siz
     op->offset += nr_advance;
 
     vec = &op->iovecs[0];
-    fprintf(stderr, "adjust start nr_advance=%ld, first iov_len=%ld\n", nr_advance, vec->iov_len);
     if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
         nr_advance -= vec->iov_len;
 
         vec->iov_len += vec->iov_base - op->saved_iov_base;
-        fprintf(stderr, "restoring iov_len=%ld, iov_base=%p, nr_vecs=%d\n", vec->iov_len, op->saved_iov_base, op->nr_vecs);
         vec->iov_base = op->saved_iov_base;
         op->saved_iov_base = NULL;
 
@@ -316,22 +314,10 @@ void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, siz
 
     if (nr_advance != 0 && op->saved_iov_base == NULL) {
         op->saved_iov_base = vec->iov_base;
-        fprintf(stderr, "saving iov_base=%p, nr_vecs=%d, nr_advance=%ld\n", vec->iov_base, op->nr_vecs, nr_advance);
     }
     vec->iov_base += nr_advance;
     vec->iov_len -= nr_advance;
     op->iovecs = vec;
-
-    int i;
-    fprintf(stderr, "after adjust nr_vecs=%d\n", op->nr_vecs);
-    for (i = 0; i < op->nr_vecs; i++) {
-        fprintf(stderr, "after adjust i=%d, iov_len=%ld, iov_base=%p\n", i, op->iovecs[i].iov_len, op->iovecs[i].iov_base);
-    }
-
-    fprintf(stderr, "after adjust saved_nr_vecs=%d\n", op->saved_nr_vecs);
-    for (i = 0; i < op->saved_nr_vecs; i++) {
-        fprintf(stderr, "after adjust, saved i=%d, iov_len=%ld, iov_base=%p\n", i, op->saved_iovecs[i].iov_len, op->saved_iovecs[i].iov_base);
-    }
 }
 
 /* NOTE: This function is not static for testing. */
