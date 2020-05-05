@@ -92,7 +92,7 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
     }
 
     /*
-     * All done. nothing else to do for write.
+     * All done for this write.
      */
     ctx->write_left -= op->nbytes;
     free(op);
@@ -107,11 +107,9 @@ static void queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     copy_ctx_t *ctx;
     int ret;
 
-    // fprintf(stderr, "queue_write start, op=%p\n", op);
     ctx = op->common.ctx;
     op->handler = handle_write_completion;
     op->fd = ctx->outfd;
-    // fprintf(stderr, "before urev_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
     ret = urev_prep_write(queue, op);
     if (ret < 0) {
         fprintf(stderr, "urev_prep_write: %s\n", strerror(-ret));
@@ -130,7 +128,7 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
     }
 
     /*
-     * All done.  queue up corresponding write.
+     * All done for this read. queue up corresponding write.
      */
     ctx->read_left -= op->nbytes;
     queue_write(op->common.queue, op);
@@ -169,7 +167,6 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
     offset = 0;
     ctx->read_left = ctx->write_left = insize = ctx->insize;
     while (ctx->fsync_completed == 0) {
-        fprintf(stderr, "copy_file loop insize=%ld, write_left=%ld\n", insize, ctx->write_left);
         /*
          * Queue up as many reads as we can
          */
@@ -182,7 +179,6 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
                 break;
 
             ret = queue_read(queue, ctx, this_size, offset);
-            fprintf(stderr, "after queue_read, ret=%d\n", ret);
             if (ret < 0) {
                 fprintf(stderr, "queue_read: %s\n", strerror(-ret));
                 break;
@@ -191,19 +187,16 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
             insize -= this_size;
             offset += this_size;
         }
-        fprintf(stderr, "after queueing reads\n");
         ret = urev_submit(queue);
-        fprintf(stderr, "submit reads, ret=%d\n", ret);
         if (ret < 0) {
             fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
             break;
         }
 
         /*
-         * Queue is full at this point. Find at least one completion.
+         * Queue may be full at this point. Find at least one completion.
          */
         ret = urev_wait_and_handle_completions(queue);
-        fprintf(stderr, "after urev_wait_and_handle_completions, ret=%d\n", ret);
         if (ret < 0) {
             fprintf(stderr, "urev_wait_and_handle_completions: %s\n",
                         strerror(-ret));
@@ -226,7 +219,6 @@ static void handle_open_src_completion(urev_openat_op_t *op)
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->infd = op->common.cqe_res;
-        fprintf(stderr, "on_open_src: infd=%d\n", ctx->infd);
     }
     free(op);
 }
@@ -261,7 +253,6 @@ static void handle_open_dest_completion(urev_openat_op_t *op)
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->outfd = op->common.cqe_res;
-        fprintf(stderr, "on_open_dest: outfd=%d\n", ctx->outfd);
     }
     free(op);
 }
@@ -295,11 +286,9 @@ static void handle_src_file_size_completion(urev_statx_op_t *op)
     copy_ctx_t *ctx;
 
     ctx = op->common.ctx;
-    fprintf(stderr, "on_get_src_size start, err_code=%d\n", op->common.err_code);
     set_err_code(ctx, op->common.err_code);
     ctx->inmode = op->statxbuf->stx_mode;
     ctx->insize = op->statxbuf->stx_size;
-    fprintf(stderr, "on_get_src_size: inmode=%lx, insize=%ld\n", ctx->inmode, ctx->insize);
     free(op);
 }
 
@@ -362,7 +351,6 @@ static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *c
             return 1;
         }
     }
-    fprintf(stderr, "ctx->infd=%d, ctx->outfd=%d, ctx->inmode=%lx, ctx->insize=%ld, ctx->err_code=%d\n", ctx->infd, ctx->outfd, ctx->inmode, ctx->insize, ctx->err_code);
 
     if (S_ISBLK(ctx->inmode)) {
         unsigned long long bytes;
@@ -370,7 +358,6 @@ static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *c
         if (ioctl(ctx->infd, BLKGETSIZE64, &bytes) != 0)
             return -1;
 
-        fprintf(stderr, "open_src_and_dest_and_get_src_size block file, size=%lld\n", bytes);
         ctx->insize = bytes;
     }
 
