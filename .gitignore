@@ -6,6 +6,8 @@
 
 /examples/urev-cp
 
+/test/adjust_restore_iovecs
+
 config-host.h
 config-host.mak
 config.log

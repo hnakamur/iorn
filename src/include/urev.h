@@ -219,4 +219,8 @@ void urev_handle_short_write(urev_read_or_write_op_t *op);
 void urev_handle_short_readv(urev_readv_or_writev_op_t *op);
 void urev_handle_short_writev(urev_readv_or_writev_op_t *op);
 
+/* NOTE: These functions are exported just for testing. */
+void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance);
+void _urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op);
+
 #endif
