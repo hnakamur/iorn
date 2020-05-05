@@ -377,12 +377,103 @@ static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *c
     return 0;
 }
 
+static void on_src_closed(urev_close_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    ctx->infd = 0;
+    free(op);
+}
+
+static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    urev_close_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = on_src_closed;
+    op->fd = ctx->infd;
+    ret = urev_prep_close(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        return ret;
+    }
+    return 0;
+}
+
+static void on_dest_closed(urev_close_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    ctx->outfd = 0;
+    free(op);
+}
+
+static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    urev_close_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = on_dest_closed;
+    op->fd = ctx->outfd;
+    ret = urev_prep_close(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        return ret;
+    }
+    return 0;
+}
+
+static int close_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    int ret;
+
+    ret = queue_close_src(queue, ctx);
+    if (ret < 0) {
+        fprintf(stderr, "queue_close_src: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = queue_close_dest(queue, ctx);
+    if (ret < 0) {
+        fprintf(stderr, "queue_close_dest: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = urev_submit(queue);
+    if (ret < 0) {
+        fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+        return 1;
+    }
+
+    while ((ctx->infd != 0 || ctx->outfd != 0) && ctx->err_code == 0) {
+        ret = urev_wait_and_handle_completions(queue);
+        if (ret < 0) {
+            fprintf(stderr, "handle completions for close: %s\n",
+                        strerror(-ret));
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     urev_queue_t queue;
     copy_ctx_t ctx;
     int ret;
-    off_t insize;
 
     if (argc < 3) {
         printf("%s: infile outfile\n", argv[0]);
@@ -398,10 +489,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    ret = copy_file(&queue, &ctx);
-    close(ctx.infd);
-    close(ctx.outfd);
+    if (copy_file(&queue, &ctx))
+        return 1;
+
+    if (close_src_and_dest(&queue, &ctx))
+        return 1;
 
     urev_queue_exit(&queue);
-    return ret;
+    return 0;
 }

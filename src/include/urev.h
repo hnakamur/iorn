@@ -8,6 +8,7 @@ typedef struct urev_queue urev_queue_t;
 
 typedef struct urev_op_common          urev_op_common_t;
 typedef struct urev_accept_op          urev_accept_op_t;
+typedef struct urev_close_op           urev_close_op_t;
 typedef struct urev_fsync_op           urev_fsync_op_t;
 typedef struct urev_openat_op          urev_openat_op_t;
 typedef struct urev_openat2_op         urev_openat2_op_t;
@@ -54,6 +55,12 @@ static inline int urev_submit(urev_queue_t *queue)
  * @param [in] op     a accept operation.
  */
 typedef void (*urev_accept_handler_t)(urev_accept_op_t *op);
+
+/**
+ * completion handler type for a close operation.
+ * @param [in] op     a close operation.
+ */
+typedef void (*urev_close_handler_t)(urev_close_op_t *op);
 
 /**
  * completion handler type for a fsync operation.
@@ -118,6 +125,13 @@ struct urev_accept_op {
     struct sockaddr *addr;
     socklen_t       *addrlen;
     int             flags;
+};
+
+struct urev_close_op {
+    urev_op_common_t     common; // must be the first field
+    urev_close_handler_t handler;
+
+    int fd;
 };
 
 struct urev_fsync_op {
@@ -214,6 +228,7 @@ static inline void urev_op_set_err_code(urev_op_common_t *common, int err_code)
 }
 
 int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op);
+int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op);
 int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op);
 int urev_prep_openat(urev_queue_t *queue, urev_openat_op_t *op);
 int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op);
