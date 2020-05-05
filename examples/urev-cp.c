@@ -25,6 +25,7 @@ typedef struct copy_ctx {
     off_t insize;
     off_t read_left;
     off_t write_left;
+    int   fsync_completed;
     int   err_code;
 } copy_ctx_t;
 
@@ -70,9 +71,32 @@ static inline void set_err_code(copy_ctx_t *ctx, int err_code)
     }
 }
 
-static inline void copy_err_code_from_op(copy_ctx_t *ctx, urev_read_or_write_op_t *op)
+static void handle_fsync_completion(urev_fsync_op_t *op)
 {
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
     set_err_code(ctx, op->common.err_code);
+    ctx->fsync_completed = 1;
+}
+
+static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    urev_fsync_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        fprintf(stderr, "calloc in queue_fsync: %s\n", strerror(ENOMEM));
+    }
+
+    op->common.ctx = ctx;
+    op->handler = handle_fsync_completion;
+    op->fd = ctx->outfd;
+    ret = urev_prep_fsync(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_fsync: %s\n", strerror(-ret));
+    }
 }
 
 static void handle_write_completion(urev_read_or_write_op_t *op)
@@ -81,7 +105,7 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
 
     ctx = op->common.ctx;
     urev_handle_short_write(op);
-    copy_err_code_from_op(ctx, op);
+    set_err_code(ctx, op->common.err_code);
     if (op->nbytes_left) {
         return;
     }
@@ -91,6 +115,10 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
      */
     ctx->write_left -= op->nbytes;
     free(op);
+
+    if (ctx->write_left == 0) {
+        queue_fsync(op->common.queue, ctx);
+    }
 }
 
 static void queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
@@ -115,7 +143,7 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
 
     ctx = op->common.ctx;
     urev_handle_short_read(op);
-    copy_err_code_from_op(ctx, op);
+    set_err_code(ctx, op->common.err_code);
     if (op->nbytes_left) {
         return;
     }
@@ -159,7 +187,7 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
 
     offset = 0;
     ctx->read_left = ctx->write_left = insize = ctx->insize;
-    while (ctx->read_left || ctx->write_left) {
+    while (ctx->fsync_completed == 0) {
         fprintf(stderr, "copy_file loop insize=%ld, write_left=%ld\n", insize, ctx->write_left);
         /*
          * Queue up as many reads as we can
@@ -200,10 +228,10 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
                         strerror(-ret));
             return ret;
         }
-        ret = urev_submit(queue);
-        if (ret < 0) {
-            return ret;
-        }
+    }
+    if (ctx->err_code != 0) {
+        fprintf(stderr, "got error in handlers: %s", strerror(ctx->err_code));
+        return -ctx->err_code;
     }
 
     return 0;
@@ -238,7 +266,6 @@ int main(int argc, char *argv[])
 
     ret = copy_file(&queue, &ctx);
 
-    fsync(ctx.outfd);
     close(ctx.infd);
     close(ctx.outfd);
     urev_queue_exit(&queue);

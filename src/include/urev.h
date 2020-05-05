@@ -8,6 +8,7 @@ typedef struct urev_queue urev_queue_t;
 
 typedef struct urev_op_common          urev_op_common_t;
 typedef struct urev_accept_op          urev_accept_op_t;
+typedef struct urev_fsync_op           urev_fsync_op_t;
 typedef struct urev_read_or_write_op   urev_read_or_write_op_t;
 typedef struct urev_readv_or_writev_op urev_readv_or_writev_op_t;
 typedef struct urev_timeout_op         urev_timeout_op_t;
@@ -50,6 +51,12 @@ static inline int urev_submit(urev_queue_t *queue)
  * @param [in] op     a accept operation.
  */
 typedef void (*urev_accept_handler_t)(urev_accept_op_t *op);
+
+/**
+ * completion handler type for a fsync operation.
+ * @param [in] op     a fsync operation.
+ */
+typedef void (*urev_fsync_handler_t)(urev_fsync_op_t *op);
 
 /**
  * completion handler type for a read or operation.
@@ -104,7 +111,6 @@ struct urev_read_or_write_op {
     unsigned  nbytes_left;
     void     *saved_buf;
     unsigned  saved_nbytes;
-    off_t     saved_offset;
 };
 
 struct urev_readv_or_writev_op {
@@ -120,7 +126,14 @@ struct urev_readv_or_writev_op {
     int           saved_nr_vecs;
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
-    off_t         saved_offset;
+};
+
+struct urev_fsync_op {
+    urev_op_common_t     common; // must be the first field
+    urev_fsync_handler_t handler;
+
+    int      fd;
+    unsigned fsync_flags;
 };
 
 struct urev_timeout_op {
@@ -147,7 +160,8 @@ static inline void urev_op_set_err_code(urev_op_common_t *common, int err_code)
     }
 }
 
-int urev_queue_accept(urev_queue_t *queue, struct urev_accept_op *op);
+int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op);
+int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op);
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
@@ -202,5 +216,7 @@ static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
 
 void urev_handle_short_read(urev_read_or_write_op_t *op);
 void urev_handle_short_write(urev_read_or_write_op_t *op);
+void urev_handle_short_readv(urev_readv_or_writev_op_t *op);
+void urev_handle_short_writev(urev_readv_or_writev_op_t *op);
 
 #endif
