@@ -9,6 +9,8 @@ typedef struct urev_queue urev_queue_t;
 typedef struct urev_op_common          urev_op_common_t;
 typedef struct urev_accept_op          urev_accept_op_t;
 typedef struct urev_fsync_op           urev_fsync_op_t;
+typedef struct urev_openat_op          urev_openat_op_t;
+typedef struct urev_openat2_op         urev_openat2_op_t;
 typedef struct urev_read_or_write_op   urev_read_or_write_op_t;
 typedef struct urev_readv_or_writev_op urev_readv_or_writev_op_t;
 typedef struct urev_timeout_op         urev_timeout_op_t;
@@ -59,6 +61,18 @@ typedef void (*urev_accept_handler_t)(urev_accept_op_t *op);
 typedef void (*urev_fsync_handler_t)(urev_fsync_op_t *op);
 
 /**
+ * completion handler type for a openat operation.
+ * @param [in] op     a openat operation.
+ */
+typedef void (*urev_openat_handler_t)(urev_openat_op_t *op);
+
+/**
+ * completion handler type for a openat2 operation.
+ * @param [in] op     a openat2 operation.
+ */
+typedef void (*urev_openat2_handler_t)(urev_openat2_op_t *op);
+
+/**
  * completion handler type for a read or operation.
  * @param [in] op     a read or write operation.
  */
@@ -99,6 +113,33 @@ struct urev_accept_op {
     int             flags;
 };
 
+struct urev_fsync_op {
+    urev_op_common_t     common; // must be the first field
+    urev_fsync_handler_t handler;
+
+    int      fd;
+    unsigned fsync_flags;
+};
+
+struct urev_openat_op {
+    urev_op_common_t      common; // must be the first field
+    urev_openat_handler_t handler;
+
+    int         dfd;
+    const char *path;
+    int         flags;
+    mode_t      mode;
+};
+
+struct urev_openat2_op {
+    urev_op_common_t       common; // must be the first field
+    urev_openat2_handler_t handler;
+
+    int              dfd;
+    const char      *path;
+    struct open_how *how;
+};
+
 struct urev_read_or_write_op {
     urev_op_common_t              common; // must be the first field
     urev_read_or_write_handler_t  handler;
@@ -130,14 +171,6 @@ struct urev_readv_or_writev_op {
     off_t         saved_offset;
 };
 
-struct urev_fsync_op {
-    urev_op_common_t     common; // must be the first field
-    urev_fsync_handler_t handler;
-
-    int      fd;
-    unsigned fsync_flags;
-};
-
 struct urev_timeout_op {
     urev_op_common_t       common; // must be the first field
     urev_timeout_handler_t handler;
@@ -164,6 +197,8 @@ static inline void urev_op_set_err_code(urev_op_common_t *common, int err_code)
 
 int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op);
 int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op);
+int urev_prep_openat(urev_queue_t *queue, urev_openat_op_t *op);
+int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op);
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op);

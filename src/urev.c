@@ -41,7 +41,7 @@ int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -57,7 +57,7 @@ int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -69,11 +69,43 @@ int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
     return 0;
 }
 
+int urev_prep_openat(urev_queue_t *queue, urev_openat_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe_safe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_openat(sqe, op->dfd, op->path, op->flags, op->mode);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
+int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe_safe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_openat2(sqe, op->dfd, op->path, op->how);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -90,7 +122,7 @@ int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -138,7 +170,7 @@ void urev_handle_short_read(urev_read_or_write_op_t *op)
         }
         return;
     }
-    
+
     op->nbytes_left -= res;
     if (op->nbytes_left) {
         urev_adjust_after_short_read_or_write(op, res);
@@ -166,7 +198,7 @@ void urev_handle_short_write(urev_read_or_write_op_t *op)
         }
         return;
     }
-    
+
     op->nbytes_left -= res;
     if (op->nbytes_left) {
         urev_adjust_after_short_read_or_write(op, res);
@@ -184,7 +216,7 @@ int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -201,7 +233,7 @@ int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -294,7 +326,7 @@ void urev_handle_short_readv(urev_readv_or_writev_op_t *op)
         }
         return;
     }
-    
+
     op->nbytes_left -= res;
     if (op->nbytes_left) {
         _urev_adjust_after_short_readv_or_writev(op, res);
@@ -322,7 +354,7 @@ void urev_handle_short_writev(urev_readv_or_writev_op_t *op)
         }
         return;
     }
-    
+
     op->nbytes_left -= res;
     if (op->nbytes_left) {
         _urev_adjust_after_short_readv_or_writev(op, res);
@@ -340,7 +372,7 @@ int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -356,7 +388,7 @@ int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op)
 {
     struct io_uring_sqe* sqe;
     int ret;
-    
+
     ret = urev_get_sqe_safe(queue, &sqe);
     if (ret < 0) {
         return ret;
@@ -377,6 +409,18 @@ static inline void urev_handle_accept(urev_op_common_t *common)
 static inline void urev_handle_fsync(urev_op_common_t *common)
 {
     urev_fsync_op_t *op = (urev_fsync_op_t *) common;
+    op->handler(op);
+}
+
+static inline void urev_handle_openat(urev_op_common_t *common)
+{
+    urev_openat_op_t *op = (urev_openat_op_t *) common;
+    op->handler(op);
+}
+
+static inline void urev_handle_openat2(urev_op_common_t *common)
+{
+    urev_openat2_op_t *op = (urev_openat2_op_t *) common;
     op->handler(op);
 }
 
@@ -432,6 +476,12 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         break;
     case IORING_OP_FSYNC:
         urev_handle_fsync(op);
+        break;
+    case IORING_OP_OPENAT:
+        urev_handle_openat(op);
+        break;
+    case IORING_OP_OPENAT2:
+        urev_handle_openat2(op);
         break;
     case IORING_OP_READ:
         urev_handle_read(op);
