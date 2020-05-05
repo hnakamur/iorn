@@ -111,6 +111,7 @@ struct urev_read_or_write_op {
     unsigned  nbytes_left;
     void     *saved_buf;
     unsigned  saved_nbytes;
+    off_t     saved_offset;
 };
 
 struct urev_readv_or_writev_op {
@@ -126,6 +127,7 @@ struct urev_readv_or_writev_op {
     int           saved_nr_vecs;
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
+    off_t         saved_offset;
 };
 
 struct urev_fsync_op {

@@ -108,6 +108,7 @@ static void urev_adjust_after_short_read_or_write(urev_read_or_write_op_t *op, i
     if (op->saved_buf == NULL) {
         op->saved_buf = op->buf;
         op->saved_nbytes = op->nbytes;
+        op->saved_offset = op->offset;
     }
     op->buf += nr_advance;
     op->nbytes -= nr_advance;
@@ -119,6 +120,7 @@ static void urev_restore_after_short_read_or_write(urev_read_or_write_op_t *op)
     if (op->nbytes_left == 0 && op->saved_buf != NULL) {
         op->buf = op->saved_buf;
         op->nbytes = op->saved_nbytes;
+        op->offset = op->saved_offset;
     }
 }
 
@@ -220,6 +222,7 @@ void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, siz
     if (op->saved_iovecs == NULL) {
         op->saved_nr_vecs = op->nr_vecs;
         op->saved_iovecs = op->iovecs;
+        op->saved_offset = op->offset;
     }
     op->offset += nr_advance;
 
@@ -273,6 +276,7 @@ void _urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op)
         }
         op->iovecs = op->saved_iovecs;
         op->nr_vecs = op->saved_nr_vecs;
+        op->offset = op->saved_offset;
     }
 }
 

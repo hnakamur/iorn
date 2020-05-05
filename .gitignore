@@ -5,6 +5,7 @@
 /src/liburev.so*
 
 /examples/urev-cp
+/examples/urev-cp-vecs
 
 /test/adjust_restore_iovecs
 
