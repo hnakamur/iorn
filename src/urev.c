@@ -2,27 +2,32 @@
 #include <stdio.h>
 #include "urev.h"
 
-static int urev_get_sqe_safe(urev_queue_t *queue, struct io_uring_sqe **sqe)
+static int urev_get_sqe(urev_queue_t *queue, struct io_uring_sqe **sqe)
 {
     int ret;
 
-    *sqe = io_uring_get_sqe(&queue->ring);
-    if (*sqe != NULL) {
-        queue->sqe_count++;
-        return 0;
-    }
+    for (;;) {
+        *sqe = io_uring_get_sqe(&queue->ring);
+        if (*sqe != NULL) {
+            return 0;
+        }
 
-    ret = urev_submit(queue);
-    if (ret < 0) {
-        return ret;
+        ret = urev_submit(queue);
+        if (ret < 0) {
+            // NOTE: If there is still no room in submission queue
+            // after calliing urev_submit, we should wait and handle
+            // a completion and retry getting sqe.
+            //
+            // See EAGAIN and EBUSY in man io_uring_enter(2) for detail.
+            // https://github.com/axboe/liburing/blob/fe500488190ff39716346ee1c0fe66bde300d0fb/man/io_uring_enter.2#L751
+            if (ret == -EAGAIN || ret == -EBUSY) {
+                ret = urev_wait_and_handle_completion(queue);
+            }
+            if (ret < 0) {
+                return ret;
+            }
+        }
     }
-    *sqe = io_uring_get_sqe(&queue->ring);
-    if (*sqe == NULL) {
-        fprintf(stderr, "failed to get sqe right after submit\n");
-        return -EAGAIN;
-    }
-    queue->sqe_count++;
-    return 0;
 }
 
 static size_t urev_iovecs_total_len(int nr_vecs, struct iovec *iovecs)
@@ -42,7 +47,7 @@ int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -58,7 +63,7 @@ int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -74,7 +79,7 @@ int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -90,7 +95,7 @@ int urev_prep_openat(urev_queue_t *queue, urev_openat_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -106,7 +111,7 @@ int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -122,7 +127,7 @@ int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -138,7 +143,7 @@ int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -155,7 +160,7 @@ int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -249,7 +254,7 @@ int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -266,7 +271,7 @@ int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -405,7 +410,7 @@ int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }
@@ -421,7 +426,7 @@ int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op)
     struct io_uring_sqe* sqe;
     int ret;
 
-    ret = urev_get_sqe_safe(queue, &sqe);
+    ret = urev_get_sqe(queue, &sqe);
     if (ret < 0) {
         return ret;
     }

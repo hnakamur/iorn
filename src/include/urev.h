@@ -20,7 +20,6 @@ typedef struct urev_timeout_cancel_op  urev_timeout_cancel_op_t;
 
 struct urev_queue {
     struct io_uring ring;
-    int             sqe_count;
 };
 
 static inline int urev_queue_init(unsigned entries, urev_queue_t *queue,
@@ -36,18 +35,7 @@ static inline void urev_queue_exit(urev_queue_t *queue)
 
 static inline int urev_submit(urev_queue_t *queue)
 {
-    int ret;
-
-    // fprintf(stderr, "urev_submit start, sqe_count=%d\n", queue->sqe_count);
-    if (queue->sqe_count == 0) {
-        return 0;
-    }
-    ret = io_uring_submit(&queue->ring);
-    // fprintf(stderr, "urev_submit start, io_uring_submit ret=%d\n", ret);
-    if (ret > 0) {
-        queue->sqe_count -= ret;
-    }
-    return ret;
+    return io_uring_submit(&queue->ring);
 }
 
 /**
@@ -227,6 +215,16 @@ static inline void urev_op_set_err_code(urev_op_common_t *common, int err_code)
     }
 }
 
+/**
+ * Get a sqe and prepare an accept operation.
+ *
+ * If the submission queue is full, this function tries to make room
+ * with calling urev_submit and urev_wait_and_handle_completion repeatedly.
+ *
+ * @param [in,out] queue a queue.
+ * @param [in,out] op    an accept operatoin.
+ * @return zero if success, -errno from urev_submit or urev_wait_and_handle_completion if error.
+ */
 int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op);
 int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op);
 int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op);
@@ -238,16 +236,35 @@ int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op);
 int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op);
+
 /**
  * Prepare a timeout_cancel operation.
+ *
+ * If the submission queue is full, this function tries to make room
+ * with calling urev_submit and urev_wait_and_handle_completion repeatedly.
+ *
  * @param [in,out] sqe  a submission queue entry.
- * @param [in]     op   a timeout_cancel operation.
+ * @param [in,out] op   a timeout_cancel operation.
  *                      op->target_op must be set to the target
  *                      timeout operation.
+ * @return zero if success, -errno from urev_submit or urev_wait_and_handle_completion if error.
  */
 int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
 
 void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe);
+
+static inline int urev_wait_and_handle_completion(urev_queue_t *queue)
+{
+    int ret;
+    struct io_uring_cqe *cqe;
+
+    ret = io_uring_wait_cqe(&queue->ring, &cqe);
+    if (cqe != NULL) {
+        urev_handle_completion(queue, cqe);
+        io_uring_cq_advance(&queue->ring, 1);
+    }
+    return ret;
+}
 
 static inline void urev_peek_and_handle_completions(urev_queue_t *queue)
 {
@@ -255,11 +272,9 @@ static inline void urev_peek_and_handle_completions(urev_queue_t *queue)
     unsigned head;
     unsigned cqe_count;
 
-    fprintf(stderr, "urev_handle_completions start\n");
     cqe_count = 0;
     io_uring_for_each_cqe(&queue->ring, head, cqe) {
         cqe_count++;
-        fprintf(stderr, "io_uring_for_each_cqe, cqe=%p, cqe_count=%d\n", cqe, cqe_count);
         urev_handle_completion(queue, cqe);
     }
     io_uring_cq_advance(&queue->ring, cqe_count);
@@ -267,16 +282,9 @@ static inline void urev_peek_and_handle_completions(urev_queue_t *queue)
 
 static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
 {
-    struct io_uring_cqe *cqe;
     int ret;
 
-    fprintf(stderr, "urev_wait_and_handle_completions start\n");
-    ret = io_uring_wait_cqe(&queue->ring, &cqe);
-    fprintf(stderr, "after io_uring_wait_cqe, cqe=%p\n", cqe);
-    if (cqe != NULL) {
-        urev_handle_completion(queue, cqe);
-        io_uring_cq_advance(&queue->ring, 1);
-    }
+    ret = urev_wait_and_handle_completion(queue);
     if (ret < 0) {
         return ret;
     }
