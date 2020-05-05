@@ -20,13 +20,14 @@
 #define BS    (32*1024)
 
 typedef struct copy_ctx {
-    int   infd;
-    int   outfd;
-    off_t insize;
-    off_t read_left;
-    off_t write_left;
-    int   fsync_completed;
-    int   err_code;
+    int    infd;
+    int    outfd;
+    off_t  inmode;
+    off_t  insize;
+    off_t  read_left;
+    off_t  write_left;
+    int    fsync_completed;
+    int    err_code;
 } copy_ctx_t;
 
 static int setup_context(unsigned entries, urev_queue_t *queue, copy_ctx_t *ctx)
@@ -42,28 +43,6 @@ static int setup_context(unsigned entries, urev_queue_t *queue, copy_ctx_t *ctx)
     memset(ctx, 0, sizeof(*ctx));
 
     return 0;
-}
-
-static int get_file_size(int fd, off_t *size)
-{
-    struct stat st;
-
-    if (fstat(fd, &st) < 0)
-        return -1;
-    if (S_ISREG(st.st_mode)) {
-        *size = st.st_size;
-        return 0;
-    } else if (S_ISBLK(st.st_mode)) {
-        unsigned long long bytes;
-
-        if (ioctl(fd, BLKGETSIZE64, &bytes) != 0)
-            return -1;
-
-        *size = bytes;
-        return 0;
-    }
-
-    return -1;
 }
 
 static inline void set_err_code(copy_ctx_t *ctx, int err_code)
@@ -247,6 +226,7 @@ static void handle_open_src_completion(urev_openat_op_t *op)
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->infd = op->common.cqe_res;
+        fprintf(stderr, "on_open_src: infd=%d\n", ctx->infd);
     }
     free(op);
 }
@@ -281,6 +261,7 @@ static void handle_open_dest_completion(urev_openat_op_t *op)
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->outfd = op->common.cqe_res;
+        fprintf(stderr, "on_open_dest: outfd=%d\n", ctx->outfd);
     }
     free(op);
 }
@@ -309,13 +290,57 @@ static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *pat
     return 0;
 }
 
-static int open_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *src_path, const char *dest_path)
+static void handle_src_file_size_completion(urev_statx_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    fprintf(stderr, "on_get_src_size start, err_code=%d\n", op->common.err_code);
+    set_err_code(ctx, op->common.err_code);
+    ctx->inmode = op->statxbuf->stx_mode;
+    ctx->insize = op->statxbuf->stx_size;
+    fprintf(stderr, "on_get_src_size: inmode=%lx, insize=%ld\n", ctx->inmode, ctx->insize);
+    free(op);
+}
+
+static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+{
+    urev_statx_op_t *op;
+    struct statx *st;
+    int ret;
+
+    op = calloc(1, sizeof(*op) + sizeof(*st));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = handle_src_file_size_completion;
+    op->dfd = AT_FDCWD;
+    op->path = path;
+    op->flags = 0;
+    op->mask = STATX_MODE | STATX_SIZE | STATX_BLOCKS;
+    op->statxbuf = (struct statx *)(op + 1);
+    ret = urev_prep_statx(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_statx: %s\n", strerror(-ret));
+        return ret;
+    }
+
+    return 0;
+}
+
+static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *src_path, const char *dest_path)
 {
     int ret;
 
     ret = queue_open_src(queue, ctx, src_path);
     if (ret < 0) {
         fprintf(stderr, "queue_open_src: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = queue_get_src_size(queue, ctx, src_path);
+    if (ret < 0) {
+        fprintf(stderr, "queue_get_src_size: %s\n", strerror(-ret));
         return 1;
     }
     ret = queue_open_dest(queue, ctx, dest_path);
@@ -329,7 +354,7 @@ static int open_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *s
         return 1;
     }
 
-    while ((ctx->infd == 0 || ctx->outfd == 0) && ctx->err_code == 0) {
+    while ((ctx->infd == 0 || ctx->outfd == 0 || ctx->insize == -1) && ctx->err_code == 0) {
         ret = urev_wait_and_handle_completions(queue);
         if (ret < 0) {
             fprintf(stderr, "handle completions for open: %s\n",
@@ -337,7 +362,18 @@ static int open_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *s
             return 1;
         }
     }
-    fprintf(stderr, "ctx->infd=%d, ctx->outfd=%d, ctx->err_code=%d\n", ctx->infd, ctx->outfd, ctx->err_code);
+    fprintf(stderr, "ctx->infd=%d, ctx->outfd=%d, ctx->inmode=%lx, ctx->insize=%ld, ctx->err_code=%d\n", ctx->infd, ctx->outfd, ctx->inmode, ctx->insize, ctx->err_code);
+
+    if (S_ISBLK(ctx->inmode)) {
+        unsigned long long bytes;
+
+        if (ioctl(ctx->infd, BLKGETSIZE64, &bytes) != 0)
+            return -1;
+
+        fprintf(stderr, "open_src_and_dest_and_get_src_size block file, size=%lld\n", bytes);
+        ctx->insize = bytes;
+    }
+
     return 0;
 }
 
@@ -346,6 +382,7 @@ int main(int argc, char *argv[])
     urev_queue_t queue;
     copy_ctx_t ctx;
     int ret;
+    off_t insize;
 
     if (argc < 3) {
         printf("%s: infile outfile\n", argv[0]);
@@ -355,19 +392,16 @@ int main(int argc, char *argv[])
     if (setup_context(QD, &queue, &ctx))
         return 1;
 
-    ret = open_src_and_dest(&queue, &ctx, argv[1], argv[2]);
+    ret = open_src_and_dest_and_get_src_size(&queue, &ctx, argv[1], argv[2]);
     if (ret < 0) {
         fprintf(stderr, "open_src_and_dst: %s\n", strerror(-ret));
         return 1;
     }
 
-    if (get_file_size(ctx.infd, &ctx.insize))
-        return 1;
-
     ret = copy_file(&queue, &ctx);
-
     close(ctx.infd);
     close(ctx.outfd);
+
     urev_queue_exit(&queue);
     return ret;
 }

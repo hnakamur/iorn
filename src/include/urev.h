@@ -13,6 +13,7 @@ typedef struct urev_openat_op          urev_openat_op_t;
 typedef struct urev_openat2_op         urev_openat2_op_t;
 typedef struct urev_read_or_write_op   urev_read_or_write_op_t;
 typedef struct urev_readv_or_writev_op urev_readv_or_writev_op_t;
+typedef struct urev_statx_op           urev_statx_op_t;
 typedef struct urev_timeout_op         urev_timeout_op_t;
 typedef struct urev_timeout_cancel_op  urev_timeout_cancel_op_t;
 
@@ -83,6 +84,12 @@ typedef void (*urev_read_or_write_handler_t)(urev_read_or_write_op_t *op);
  * @param [in] op     a readv or writev operation.
  */
 typedef void (*urev_readv_or_writev_handler_t)(urev_readv_or_writev_op_t *op);
+
+/**
+ * completion handler type for a statx operation.
+ * @param [in] op     a statx operation.
+ */
+typedef void (*urev_statx_handler_t)(urev_statx_op_t *op);
 
 /**
  * completion handler type for a timeout operation.
@@ -171,6 +178,17 @@ struct urev_readv_or_writev_op {
     off_t         saved_offset;
 };
 
+struct urev_statx_op {
+    urev_op_common_t     common; // must be the first field
+    urev_statx_handler_t handler;
+
+    int           dfd;
+    const char   *path;
+    int           flags;
+    unsigned      mask;
+    struct statx *statxbuf;
+};
+
 struct urev_timeout_op {
     urev_op_common_t       common; // must be the first field
     urev_timeout_handler_t handler;
@@ -200,8 +218,9 @@ int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op);
 int urev_prep_openat(urev_queue_t *queue, urev_openat_op_t *op);
 int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op);
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
-int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
+int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op);
+int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op);
 /**
