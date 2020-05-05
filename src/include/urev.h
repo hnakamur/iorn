@@ -1,6 +1,7 @@
 #ifndef UREV_H
 #define UREV_H
 
+#include <errno.h>
 #include <stdio.h>
 #include <liburing.h>
 
@@ -31,11 +32,6 @@ static inline int urev_queue_init(unsigned entries, urev_queue_t *queue,
 static inline void urev_queue_exit(urev_queue_t *queue)
 {
     io_uring_queue_exit(&queue->ring);
-}
-
-static inline int urev_submit(urev_queue_t *queue)
-{
-    return io_uring_submit(&queue->ring);
 }
 
 /**
@@ -253,45 +249,26 @@ int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
 
 void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe);
 
-static inline int urev_wait_and_handle_completion(urev_queue_t *queue)
-{
-    int ret;
-    struct io_uring_cqe *cqe;
+int urev_wait_and_handle_completion(urev_queue_t *queue);
 
-    ret = io_uring_wait_cqe(&queue->ring, &cqe);
-    if (cqe != NULL) {
-        urev_handle_completion(queue, cqe);
-        io_uring_cq_advance(&queue->ring, 1);
-    }
-    return ret;
-}
+void urev_peek_and_handle_completions(urev_queue_t *queue);
 
-static inline void urev_peek_and_handle_completions(urev_queue_t *queue)
-{
-    struct io_uring_cqe *cqe;
-    unsigned head;
-    unsigned cqe_count;
+int urev_wait_and_handle_completions(urev_queue_t *queue);
 
-    cqe_count = 0;
-    io_uring_for_each_cqe(&queue->ring, head, cqe) {
-        cqe_count++;
-        urev_handle_completion(queue, cqe);
-    }
-    io_uring_cq_advance(&queue->ring, cqe_count);
-}
-
-static inline int urev_wait_and_handle_completions(urev_queue_t *queue)
-{
-    int ret;
-
-    ret = urev_wait_and_handle_completion(queue);
-    if (ret < 0) {
-        return ret;
-    }
-
-    urev_peek_and_handle_completions(queue);
-    return 0;
-}
+/**
+ * Submit entries in the submission queue.
+ *
+ * NOTE: If -EAGAIN or -EBUSY is returned from io_uring_submit,
+ * this function calls urev_wait_and_handle_completion
+ * and retries io_uring_submit in a loop.
+ *
+ * See EAGAIN and EBUSY in man io_uring_enter(2) for detail.
+ * https://github.com/axboe/liburing/blob/fe500488190ff39716346ee1c0fe66bde300d0fb/man/io_uring_enter.2#L751
+ *
+ * @param [in,out] queue a queue.
+ * @return number of submitted entries if success, -errno if error.
+ */
+int urev_submit(urev_queue_t *queue);
 
 void urev_handle_short_read(urev_read_or_write_op_t *op);
 void urev_handle_short_write(urev_read_or_write_op_t *op);

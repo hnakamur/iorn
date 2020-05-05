@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <stdio.h>
 #include "urev.h"
 
@@ -14,18 +13,7 @@ static int urev_get_sqe(urev_queue_t *queue, struct io_uring_sqe **sqe)
 
         ret = urev_submit(queue);
         if (ret < 0) {
-            // NOTE: If there is still no room in submission queue
-            // after calliing urev_submit, we should wait and handle
-            // a completion and retry getting sqe.
-            //
-            // See EAGAIN and EBUSY in man io_uring_enter(2) for detail.
-            // https://github.com/axboe/liburing/blob/fe500488190ff39716346ee1c0fe66bde300d0fb/man/io_uring_enter.2#L751
-            if (ret == -EAGAIN || ret == -EBUSY) {
-                ret = urev_wait_and_handle_completion(queue);
-            }
-            if (ret < 0) {
-                return ret;
-            }
+            return ret;
         }
     }
 }
@@ -545,5 +533,66 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
     default:
         fprintf(stderr, "unsupported opcode in urev_handle_completion, opcode=%d\n", op->opcode);
         break;
+    }
+}
+
+int urev_wait_and_handle_completion(urev_queue_t *queue)
+{
+    int ret;
+    struct io_uring_cqe *cqe;
+
+    ret = io_uring_wait_cqe(&queue->ring, &cqe);
+    if (cqe != NULL) {
+        urev_handle_completion(queue, cqe);
+    }
+    io_uring_cqe_seen(&queue->ring, cqe);
+    return ret;
+}
+
+void urev_peek_and_handle_completions(urev_queue_t *queue)
+{
+    struct io_uring_cqe *cqe;
+    unsigned head;
+    unsigned cqe_count;
+
+    cqe_count = 0;
+    io_uring_for_each_cqe(&queue->ring, head, cqe) {
+        cqe_count++;
+        urev_handle_completion(queue, cqe);
+    }
+    io_uring_cq_advance(&queue->ring, cqe_count);
+}
+
+int urev_wait_and_handle_completions(urev_queue_t *queue)
+{
+    int ret;
+
+    ret = urev_wait_and_handle_completion(queue);
+    if (ret < 0) {
+        return ret;
+    }
+
+    urev_peek_and_handle_completions(queue);
+    return 0;
+}
+
+int urev_submit(urev_queue_t *queue)
+{
+    int ret;
+
+    for (;;) {
+        ret = io_uring_submit(&queue->ring);
+        if (ret >= 0) {
+            return ret;
+        }
+
+        if (ret == -EAGAIN || ret == -EBUSY) {
+            ret = urev_wait_and_handle_completion(queue);
+            if (ret < 0) {
+                return ret;
+            }
+        } else {
+            return ret;
+        }
     }
 }
