@@ -174,6 +174,23 @@ int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op)
     return 0;
 }
 
+int urev_prep_splice(urev_queue_t *queue, urev_splice_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_splice(sqe, op->fd_in, op->off_in,
+        op->fd_out, op->off_out, op->nbytes, op->splice_flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -621,6 +638,12 @@ static inline void urev_handle_recvmsg_or_sendmsg(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_splice(urev_op_common_t *common)
+{
+    urev_splice_op_t *op = (urev_splice_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_statx(urev_op_common_t *common)
 {
     urev_statx_op_t *op = (urev_statx_op_t *) common;
@@ -692,6 +715,9 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
     case IORING_OP_RECVMSG:
     case IORING_OP_SENDMSG:
         urev_handle_recvmsg_or_sendmsg(op);
+        break;
+    case IORING_OP_SPLICE:
+        urev_handle_splice(op);
         break;
     case IORING_OP_STATX:
         urev_handle_statx(op);

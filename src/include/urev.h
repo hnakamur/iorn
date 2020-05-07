@@ -21,6 +21,7 @@ typedef struct urev_recv_or_send_op       urev_recv_or_send_op_t;
 typedef struct urev_recvmsg_or_sendmsg_op urev_recvmsg_or_sendmsg_op_t;
 typedef struct urev_read_or_write_op      urev_read_or_write_op_t;
 typedef struct urev_readv_or_writev_op    urev_readv_or_writev_op_t;
+typedef struct urev_splice_op             urev_splice_op_t;
 typedef struct urev_statx_op              urev_statx_op_t;
 typedef struct urev_timeout_op            urev_timeout_op_t;
 typedef struct urev_timeout_cancel_op     urev_timeout_cancel_op_t;
@@ -117,6 +118,12 @@ typedef void (*urev_recv_or_send_handler_t)(urev_recv_or_send_op_t *op);
  * @param [in] op     a recvmsg or sendmsg operation.
  */
 typedef void (*urev_recvmsg_or_sendmsg_handler_t)(urev_recvmsg_or_sendmsg_op_t *op);
+
+/**
+ * completion handler type for a splice operation.
+ * @param [in] op     a splice operation.
+ */
+typedef void (*urev_splice_handler_t)(urev_splice_op_t *op);
 
 /**
  * completion handler type for a statx operation.
@@ -283,6 +290,18 @@ struct urev_recvmsg_or_sendmsg_op {
     size_t        saved_iovlen;
     struct iovec *saved_iov;
     void         *saved_iov_base;
+};
+
+struct urev_splice_op {
+    urev_op_common_t      common; // must be the first field
+    urev_splice_handler_t handler;
+
+    int          fd_in;
+    uint64_t     off_in;
+    int          fd_out;
+    uint64_t     off_out;
+    unsigned int nbytes;
+    unsigned int splice_flags;
 };
 
 struct urev_statx_op {
