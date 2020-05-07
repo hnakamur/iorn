@@ -78,6 +78,22 @@ int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op)
     return 0;
 }
 
+int urev_prep_fallocate(urev_queue_t *queue, urev_fallocate_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_fallocate(sqe, op->fd, op->mode, op->offset, op->len);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -513,6 +529,12 @@ static inline void urev_handle_close(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_fallocate(urev_op_common_t *common)
+{
+    urev_fallocate_op_t *op = (urev_fallocate_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_fsync(urev_op_common_t *common)
 {
     urev_fsync_op_t *op = (urev_fsync_op_t *) common;
@@ -592,6 +614,9 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         break;
     case IORING_OP_CLOSE:
         urev_handle_close(op);
+        break;
+    case IORING_OP_FALLOCATE:
+        urev_handle_fallocate(op);
         break;
     case IORING_OP_FSYNC:
         urev_handle_fsync(op);

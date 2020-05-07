@@ -11,6 +11,7 @@ typedef struct urev_op_common             urev_op_common_t;
 typedef struct urev_accept_op             urev_accept_op_t;
 typedef struct urev_connect_op            urev_connect_op_t;
 typedef struct urev_close_op              urev_close_op_t;
+typedef struct urev_fallocate_op          urev_fallocate_op_t;
 typedef struct urev_fsync_op              urev_fsync_op_t;
 typedef struct urev_openat_op             urev_openat_op_t;
 typedef struct urev_openat2_op            urev_openat2_op_t;
@@ -54,6 +55,12 @@ typedef void (*urev_connect_handler_t)(urev_connect_op_t *op);
  * @param [in] op     a close operation.
  */
 typedef void (*urev_close_handler_t)(urev_close_op_t *op);
+
+/**
+ * completion handler type for a fallocate operation.
+ * @param [in] op     a fallocate operation.
+ */
+typedef void (*urev_fallocate_handler_t)(urev_fallocate_op_t *op);
 
 /**
  * completion handler type for a fsync operation.
@@ -146,6 +153,16 @@ struct urev_close_op {
     urev_close_handler_t handler;
 
     int fd;
+};
+
+struct urev_fallocate_op {
+    urev_op_common_t         common; // must be the first field
+    urev_fallocate_handler_t handler;
+
+    int   fd;
+    int   mode;
+    off_t offset;
+    off_t len;
 };
 
 struct urev_fsync_op {
