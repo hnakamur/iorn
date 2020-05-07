@@ -7,19 +7,20 @@
 
 typedef struct urev_queue urev_queue_t;
 
-typedef struct urev_op_common          urev_op_common_t;
-typedef struct urev_accept_op          urev_accept_op_t;
-typedef struct urev_connect_op         urev_connect_op_t;
-typedef struct urev_close_op           urev_close_op_t;
-typedef struct urev_fsync_op           urev_fsync_op_t;
-typedef struct urev_openat_op          urev_openat_op_t;
-typedef struct urev_openat2_op         urev_openat2_op_t;
-typedef struct urev_recv_or_send_op    urev_recv_or_send_op_t;
-typedef struct urev_read_or_write_op   urev_read_or_write_op_t;
-typedef struct urev_readv_or_writev_op urev_readv_or_writev_op_t;
-typedef struct urev_statx_op           urev_statx_op_t;
-typedef struct urev_timeout_op         urev_timeout_op_t;
-typedef struct urev_timeout_cancel_op  urev_timeout_cancel_op_t;
+typedef struct urev_op_common             urev_op_common_t;
+typedef struct urev_accept_op             urev_accept_op_t;
+typedef struct urev_connect_op            urev_connect_op_t;
+typedef struct urev_close_op              urev_close_op_t;
+typedef struct urev_fsync_op              urev_fsync_op_t;
+typedef struct urev_openat_op             urev_openat_op_t;
+typedef struct urev_openat2_op            urev_openat2_op_t;
+typedef struct urev_recv_or_send_op       urev_recv_or_send_op_t;
+typedef struct urev_recvmsg_or_sendmsg_op urev_recvmsg_or_sendmsg_op_t;
+typedef struct urev_read_or_write_op      urev_read_or_write_op_t;
+typedef struct urev_readv_or_writev_op    urev_readv_or_writev_op_t;
+typedef struct urev_statx_op              urev_statx_op_t;
+typedef struct urev_timeout_op            urev_timeout_op_t;
+typedef struct urev_timeout_cancel_op     urev_timeout_cancel_op_t;
 
 struct urev_queue {
     struct io_uring ring;
@@ -73,12 +74,6 @@ typedef void (*urev_openat_handler_t)(urev_openat_op_t *op);
 typedef void (*urev_openat2_handler_t)(urev_openat2_op_t *op);
 
 /**
- * completion handler type for a recv or send operation.
- * @param [in] op     a recv or send operation.
- */
-typedef void (*urev_recv_or_send_handler_t)(urev_recv_or_send_op_t *op);
-
-/**
  * completion handler type for a read or write operation.
  * @param [in] op     a read or write operation.
  */
@@ -89,6 +84,18 @@ typedef void (*urev_read_or_write_handler_t)(urev_read_or_write_op_t *op);
  * @param [in] op     a readv or writev operation.
  */
 typedef void (*urev_readv_or_writev_handler_t)(urev_readv_or_writev_op_t *op);
+
+/**
+ * completion handler type for a recv or send operation.
+ * @param [in] op     a recv or send operation.
+ */
+typedef void (*urev_recv_or_send_handler_t)(urev_recv_or_send_op_t *op);
+
+/**
+ * completion handler type for a recvmsg or sendmsg operation.
+ * @param [in] op     a recvmsg or sendmsg operation.
+ */
+typedef void (*urev_recvmsg_or_sendmsg_handler_t)(urev_recvmsg_or_sendmsg_op_t *op);
 
 /**
  * completion handler type for a statx operation.
@@ -168,21 +175,6 @@ struct urev_openat2_op {
     struct open_how *how;
 };
 
-struct urev_recv_or_send_op {
-    urev_op_common_t            common; // must be the first field
-    urev_recv_or_send_handler_t handler;
-
-    int       sockfd;
-    void     *buf;
-    size_t    len;
-    int       flags;
-    off_t     offset;
-
-    size_t    nbytes_left;
-    void     *saved_buf;
-    size_t    saved_len;
-};
-
 struct urev_read_or_write_op {
     urev_op_common_t             common; // must be the first field
     urev_read_or_write_handler_t handler;
@@ -212,6 +204,35 @@ struct urev_readv_or_writev_op {
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
     off_t         saved_offset;
+};
+
+struct urev_recv_or_send_op {
+    urev_op_common_t            common; // must be the first field
+    urev_recv_or_send_handler_t handler;
+
+    int       sockfd;
+    void     *buf;
+    size_t    len;
+    int       flags;
+    off_t     offset;
+
+    size_t  nbytes_left;
+    void   *saved_buf;
+    size_t  saved_len;
+};
+
+struct urev_recvmsg_or_sendmsg_op {
+    urev_op_common_t                  common; // must be the first field
+    urev_recvmsg_or_sendmsg_handler_t handler;
+
+    int            fd;
+    struct msghdr *msg;
+    unsigned       flags;
+
+    size_t        nbytes_left;
+    size_t        saved_iovlen;
+    struct iovec *saved_iov;
+    void         *saved_iov_base;
 };
 
 struct urev_statx_op {
@@ -268,7 +289,9 @@ int urev_prep_openat2(urev_queue_t *queue, urev_openat2_op_t *op);
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 int urev_prep_recv(urev_queue_t *queue, urev_recv_or_send_op_t *op);
+int urev_prep_recvmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 int urev_prep_send(urev_queue_t *queue, urev_recv_or_send_op_t *op);
+int urev_prep_sendmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op);
 int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
 int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);

@@ -18,9 +18,9 @@ static int urev_get_sqe(urev_queue_t *queue, struct io_uring_sqe **sqe)
     }
 }
 
-static size_t urev_iovecs_total_len(int nr_vecs, struct iovec *iovecs)
+static size_t urev_iovecs_total_len(size_t nr_vecs, struct iovec *iovecs)
 {
-    int i;
+    size_t i;
     size_t len;
 
     len = 0;
@@ -172,6 +172,40 @@ int urev_prep_send(urev_queue_t *queue, urev_recv_or_send_op_t *op)
     op->common.opcode = sqe->opcode;
     op->common.queue = queue;
     op->nbytes_left = op->len;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
+int urev_prep_recvmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_recvmsg(sqe, op->fd, op->msg, op->flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    op->nbytes_left = urev_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
+int urev_prep_sendmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_sendmsg(sqe, op->fd, op->msg, op->flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    op->nbytes_left = urev_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
     io_uring_sqe_set_data(sqe, op);
     return 0;
 }
@@ -521,6 +555,12 @@ static inline void urev_handle_send(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_recvmsg_or_sendmsg(urev_op_common_t *common)
+{
+    urev_recvmsg_or_sendmsg_op_t *op = (urev_recvmsg_or_sendmsg_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_statx(urev_op_common_t *common)
 {
     urev_statx_op_t *op = (urev_statx_op_t *) common;
@@ -591,6 +631,10 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         break;
     case IORING_OP_SEND:
         urev_handle_send(op);
+        break;
+    case IORING_OP_RECVMSG:
+    case IORING_OP_SENDMSG:
+        urev_handle_recvmsg_or_sendmsg(op);
         break;
     case IORING_OP_STATX:
         urev_handle_statx(op);
