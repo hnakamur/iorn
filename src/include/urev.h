@@ -239,7 +239,8 @@ struct urev_read_or_write_op {
     unsigned  nbytes;
     off_t     offset;
 
-    unsigned  nbytes_left;
+    unsigned  nbytes_total;
+    unsigned  nbytes_done;
     void     *saved_buf;
     unsigned  saved_nbytes;
     off_t     saved_offset;
@@ -254,7 +255,8 @@ struct urev_readv_or_writev_op {
     struct iovec *iovecs;
     off_t         offset;
 
-    size_t        nbytes_left;
+    size_t        nbytes_total;
+    size_t        nbytes_done;
     int           saved_nr_vecs;
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
@@ -271,7 +273,8 @@ struct urev_recv_or_send_op {
     int     flags;
     off_t   offset;
 
-    size_t  nbytes_left;
+    size_t  nbytes_total;
+    size_t  nbytes_done;
     void   *saved_buf;
     size_t  saved_len;
 };
@@ -284,7 +287,8 @@ struct urev_recvmsg_or_sendmsg_op {
     struct msghdr *msg;
     unsigned       flags;
 
-    size_t        nbytes_left;
+    size_t        nbytes_total;
+    size_t        nbytes_done;
     size_t        saved_iovlen;
     struct iovec *saved_iov;
     void         *saved_iov_base;

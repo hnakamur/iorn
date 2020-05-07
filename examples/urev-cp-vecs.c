@@ -112,7 +112,7 @@ static void handle_writev_completion(urev_readv_or_writev_op_t *op)
     fprintf(stderr, "handle_writev_completion, cqe_res=%d, write_left=%ld\n", op->common.cqe_res, ctx->write_left);
     urev_handle_short_writev(op);
     set_err_code(ctx, op->common.err_code);
-    if (op->nbytes_left) {
+    if (op->nbytes_done < op->nbytes_total) {
         return;
     }
 
@@ -152,7 +152,7 @@ static void handle_readv_completion(urev_readv_or_writev_op_t *op)
     fprintf(stderr, "handle_readv_completion, cqe_res=%d, read_left=%ld\n", op->common.cqe_res, ctx->read_left);
     urev_handle_short_readv(op);
     set_err_code(ctx, op->common.err_code);
-    if (op->nbytes_left) {
+    if (op->nbytes_done < op->nbytes_total) {
         return;
     }
 

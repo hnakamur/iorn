@@ -177,7 +177,7 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
     ctx = op->common.ctx;
     urev_handle_short_write(op);
     set_err_code(ctx, op->common.err_code);
-    if (op->nbytes_left) {
+    if (op->nbytes_done < op->nbytes_total) {
         return;
     }
 
@@ -213,7 +213,7 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
     ctx = op->common.ctx;
     urev_handle_short_read(op);
     set_err_code(ctx, op->common.err_code);
-    if (op->nbytes_left) {
+    if (op->nbytes_done < op->nbytes_total) {
         return;
     }
 
