@@ -662,7 +662,7 @@ static inline void urev_handle_timeout_cancel(urev_op_common_t *common)
     op->handler(op);
 }
 
-void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
+static void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
 {
     urev_op_common_t *op;
 

@@ -362,10 +362,7 @@ int urev_prep_recvmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 int urev_prep_send(urev_queue_t *queue, urev_recv_or_send_op_t *op);
 int urev_prep_sendmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op);
-int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
-int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op);
-
 /**
  * Prepare a timeout_cancel operation.
  *
@@ -379,13 +376,11 @@ int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op);
  * @return zero if success, -errno from urev_submit or urev_wait_and_handle_completion if error.
  */
 int urev_prep_timeout_cancel(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
-
-void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe);
-
-int urev_wait_and_handle_completion(urev_queue_t *queue);
+int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
+int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 
 void urev_peek_and_handle_completions(urev_queue_t *queue);
-
+int urev_wait_and_handle_completion(urev_queue_t *queue);
 int urev_wait_and_handle_completions(urev_queue_t *queue);
 
 /**
