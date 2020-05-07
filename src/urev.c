@@ -46,6 +46,22 @@ int urev_prep_accept(urev_queue_t *queue, urev_accept_op_t *op)
     return 0;
 }
 
+int urev_prep_connect(urev_queue_t *queue, urev_connect_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_connect(sqe, op->fd, op->addr, op->addrlen);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -417,6 +433,12 @@ static inline void urev_handle_accept(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_connect(urev_op_common_t *common)
+{
+    urev_connect_op_t *op = (urev_connect_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_close(urev_op_common_t *common)
 {
     urev_close_op_t *op = (urev_close_op_t *) common;
@@ -496,6 +518,9 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
     switch (op->opcode) {
     case IORING_OP_ACCEPT:
         urev_handle_accept(op);
+        break;
+    case IORING_OP_CONNECT:
+        urev_handle_connect(op);
         break;
     case IORING_OP_CLOSE:
         urev_handle_close(op);
