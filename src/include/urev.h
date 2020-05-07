@@ -1,8 +1,6 @@
 #ifndef UREV_H
 #define UREV_H
 
-#include <errno.h>
-#include <stdio.h>
 #include <liburing.h>
 
 typedef struct urev_queue urev_queue_t;
