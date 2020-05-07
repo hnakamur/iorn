@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * gcc -Wall -O2 -D_GNU_SOURCE -o urev-cp urev-cp.c -luring -lurev
+ * gcc -Wall -O2 -D_GNU_SOURCE -o urev-cp-vecs urev-cp-vecs.c -luring -lurev
  */
 #include <stdio.h>
 #include <fcntl.h>
@@ -22,16 +22,17 @@
 #define BS    (NR_VECS*BUF_LEN)
 
 typedef struct copy_ctx {
-    int   infd;
-    int   outfd;
-    off_t insize;
-    off_t read_left;
-    off_t write_left;
-    int   fsync_completed;
-    int   err_code;
+    int    infd;
+    int    outfd;
+    off_t  inmode;
+    off_t  insize;
+    off_t  read_left;
+    off_t  write_left;
+    int    err_code;
+    int    all_done;
 } copy_ctx_t;
 
-static int setup_context(unsigned entries, urev_queue_t *queue)
+static int setup_context(unsigned entries, urev_queue_t *queue, copy_ctx_t *ctx)
 {
     int ret;
 
@@ -41,29 +42,9 @@ static int setup_context(unsigned entries, urev_queue_t *queue)
         return -1;
     }
 
+    memset(ctx, 0, sizeof(*ctx));
+
     return 0;
-}
-
-static int get_file_size(int fd, off_t *size)
-{
-    struct stat st;
-
-    if (fstat(fd, &st) < 0)
-        return -1;
-    if (S_ISREG(st.st_mode)) {
-        *size = st.st_size;
-        return 0;
-    } else if (S_ISBLK(st.st_mode)) {
-        unsigned long long bytes;
-
-        if (ioctl(fd, BLKGETSIZE64, &bytes) != 0)
-            return -1;
-
-        *size = bytes;
-        return 0;
-    }
-
-    return -1;
 }
 
 static inline void set_err_code(copy_ctx_t *ctx, int err_code)
@@ -73,13 +54,103 @@ static inline void set_err_code(copy_ctx_t *ctx, int err_code)
     }
 }
 
+static void on_src_closed(urev_close_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    ctx->infd = 0;
+    free(op);
+
+    if (ctx->infd == 0 && ctx->outfd == 0) {
+        ctx->all_done = 1;
+    }
+}
+
+static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    urev_close_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = on_src_closed;
+    op->fd = ctx->infd;
+    ret = urev_prep_close(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        return ret;
+    }
+    return 0;
+}
+
+static void on_dest_closed(urev_close_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    ctx->outfd = 0;
+    free(op);
+
+    if (ctx->infd == 0 && ctx->outfd == 0) {
+        ctx->all_done = 1;
+    }
+}
+
+static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    urev_close_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = on_dest_closed;
+    op->fd = ctx->outfd;
+    ret = urev_prep_close(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        return ret;
+    }
+    return 0;
+}
+
+static void close_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+{
+    int ret;
+
+    ret = queue_close_src(queue, ctx);
+    if (ret < 0) {
+        fprintf(stderr, "queue_close_src: %s\n", strerror(-ret));
+        return;
+    }
+    ret = queue_close_dest(queue, ctx);
+    if (ret < 0) {
+        fprintf(stderr, "queue_close_dest: %s\n", strerror(-ret));
+        return;
+    }
+    ret = urev_submit(queue);
+    if (ret < 0) {
+        fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+        return;
+    }
+}
+
 static void handle_fsync_completion(urev_fsync_op_t *op)
 {
     copy_ctx_t *ctx;
 
     ctx = op->common.ctx;
     set_err_code(ctx, op->common.err_code);
-    ctx->fsync_completed = 1;
+
+    close_src_and_dest(op->common.queue, ctx);
 }
 
 static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
@@ -204,8 +275,7 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
 
     offset = 0;
     ctx->read_left = ctx->write_left = insize = ctx->insize;
-    while (ctx->fsync_completed == 0) {
-        fprintf(stderr, "copy_file loop insize=%ld, write_left=%ld\n", insize, ctx->write_left);
+    while (!ctx->all_done) {
         /*
          * Queue up as many reads as we can
          */
@@ -218,7 +288,6 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
                 break;
 
             ret = queue_readv(queue, ctx, this_size, offset);
-            fprintf(stderr, "after queue_readv, this_size=%ld, ret=%d\n", this_size, ret);
             if (ret < 0) {
                 fprintf(stderr, "queue_read: %s\n", strerror(-ret));
                 break;
@@ -227,19 +296,16 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
             insize -= this_size;
             offset += this_size;
         }
-        fprintf(stderr, "after queueing reads\n");
         ret = urev_submit(queue);
-        fprintf(stderr, "submit reads, ret=%d\n", ret);
         if (ret < 0) {
             fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
             break;
         }
 
         /*
-         * Queue is full at this point. Find at least one completion.
+         * Queue may be full at this point. Find at least one completion.
          */
         ret = urev_wait_and_handle_completions(queue);
-        fprintf(stderr, "after urev_wait_and_handle_completions, ret=%d\n", ret);
         if (ret < 0) {
             fprintf(stderr, "urev_wait_and_handle_completions: %s\n",
                         strerror(-ret));
@@ -249,6 +315,159 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
     if (ctx->err_code != 0) {
         fprintf(stderr, "got error in handlers: %s", strerror(ctx->err_code));
         return -ctx->err_code;
+    }
+
+    return 0;
+}
+
+static void handle_open_src_completion(urev_openat_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    if (op->common.cqe_res > 0) {
+        ctx->infd = op->common.cqe_res;
+    }
+    free(op);
+}
+
+static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+{
+    urev_openat_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = handle_open_src_completion;
+    op->dfd = AT_FDCWD;
+    op->path = path;
+    op->flags = O_RDONLY;
+    ret = urev_prep_openat(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_openat: %s\n", strerror(-ret));
+        return ret;
+    }
+    return 0;
+}
+
+static void handle_open_dest_completion(urev_openat_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    if (op->common.cqe_res > 0) {
+        ctx->outfd = op->common.cqe_res;
+    }
+    free(op);
+}
+
+static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+{
+    urev_openat_op_t *op;
+    int ret;
+
+    op = calloc(1, sizeof(*op));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = handle_open_dest_completion;
+    op->dfd = AT_FDCWD;
+    op->path = path;
+    op->flags = O_WRONLY | O_CREAT | O_TRUNC;
+    op->mode = 0644;
+    ret = urev_prep_openat(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_openat: %s\n", strerror(-ret));
+        return ret;
+    }
+
+    return 0;
+}
+
+static void handle_src_file_size_completion(urev_statx_op_t *op)
+{
+    copy_ctx_t *ctx;
+
+    ctx = op->common.ctx;
+    set_err_code(ctx, op->common.err_code);
+    ctx->inmode = op->statxbuf->stx_mode;
+    ctx->insize = op->statxbuf->stx_size;
+    free(op);
+}
+
+static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+{
+    urev_statx_op_t *op;
+    struct statx *st;
+    int ret;
+
+    op = calloc(1, sizeof(*op) + sizeof(*st));
+    if (!op) {
+        return -ENOMEM;
+    }
+    op->common.ctx = ctx;
+    op->handler = handle_src_file_size_completion;
+    op->dfd = AT_FDCWD;
+    op->path = path;
+    op->flags = 0;
+    op->mask = STATX_MODE | STATX_SIZE | STATX_BLOCKS;
+    op->statxbuf = (struct statx *)(op + 1);
+    ret = urev_prep_statx(queue, op);
+    if (ret < 0) {
+        fprintf(stderr, "urev_prep_statx: %s\n", strerror(-ret));
+        return ret;
+    }
+
+    return 0;
+}
+
+static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *src_path, const char *dest_path)
+{
+    int ret;
+
+    ret = queue_open_src(queue, ctx, src_path);
+    if (ret < 0) {
+        fprintf(stderr, "queue_open_src: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = queue_get_src_size(queue, ctx, src_path);
+    if (ret < 0) {
+        fprintf(stderr, "queue_get_src_size: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = queue_open_dest(queue, ctx, dest_path);
+    if (ret < 0) {
+        fprintf(stderr, "queue_open_dest: %s\n", strerror(-ret));
+        return 1;
+    }
+    ret = urev_submit(queue);
+    if (ret < 0) {
+        fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+        return 1;
+    }
+
+    while ((ctx->infd == 0 || ctx->outfd == 0 || ctx->insize == -1) && ctx->err_code == 0) {
+        ret = urev_wait_and_handle_completions(queue);
+        if (ret < 0) {
+            fprintf(stderr, "handle completions for open: %s\n",
+                        strerror(-ret));
+            return 1;
+        }
+    }
+
+    if (S_ISBLK(ctx->inmode)) {
+        unsigned long long bytes;
+
+        if (ioctl(ctx->infd, BLKGETSIZE64, &bytes) != 0)
+            return -1;
+
+        ctx->insize = bytes;
     }
 
     return 0;
@@ -265,26 +484,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    ctx.infd = open(argv[1], O_RDONLY);
-    if (ctx.infd < 0) {
-        perror("open infile");
+    if (setup_context(QD, &queue, &ctx))
         return 1;
-    }
-    ctx.outfd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (ctx.outfd < 0) {
-        perror("open outfile");
+
+    ret = open_src_and_dest_and_get_src_size(&queue, &ctx, argv[1], argv[2]);
+    if (ret < 0) {
+        fprintf(stderr, "open_src_and_dst: %s\n", strerror(-ret));
         return 1;
     }
 
-    if (setup_context(QD, &queue))
-        return 1;
-    if (get_file_size(ctx.infd, &ctx.insize))
+    if (copy_file(&queue, &ctx))
         return 1;
 
-    ret = copy_file(&queue, &ctx);
-
-    close(ctx.infd);
-    close(ctx.outfd);
     urev_queue_exit(&queue);
-    return ret;
+    return 0;
 }
