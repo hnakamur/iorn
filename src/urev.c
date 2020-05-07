@@ -142,6 +142,40 @@ int urev_prep_statx(urev_queue_t *queue, urev_statx_op_t *op)
     return 0;
 }
 
+int urev_prep_recv(urev_queue_t *queue, urev_recv_or_send_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_recv(sqe, op->sockfd, op->buf, op->len, op->flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    op->nbytes_left = op->len;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
+int urev_prep_send(urev_queue_t *queue, urev_recv_or_send_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_send(sqe, op->sockfd, op->buf, op->len, op->flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    op->nbytes_left = op->len;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -475,6 +509,18 @@ static inline void urev_handle_readv(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_recv(urev_op_common_t *common)
+{
+    urev_recv_or_send_op_t *op = (urev_recv_or_send_op_t *) common;
+    op->handler(op);
+}
+
+static inline void urev_handle_send(urev_op_common_t *common)
+{
+    urev_recv_or_send_op_t *op = (urev_recv_or_send_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_statx(urev_op_common_t *common)
 {
     urev_statx_op_t *op = (urev_statx_op_t *) common;
@@ -539,6 +585,12 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         break;
     case IORING_OP_READV:
         urev_handle_readv(op);
+        break;
+    case IORING_OP_RECV:
+        urev_handle_recv(op);
+        break;
+    case IORING_OP_SEND:
+        urev_handle_send(op);
         break;
     case IORING_OP_STATX:
         urev_handle_statx(op);
