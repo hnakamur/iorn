@@ -531,25 +531,19 @@ static inline void urev_handle_openat2(urev_op_common_t *common)
     op->handler(op);
 }
 
-static inline void urev_handle_read(urev_op_common_t *common)
+static inline void urev_handle_read_or_write(urev_op_common_t *common)
 {
     urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) common;
     op->handler(op);
 }
 
-static inline void urev_handle_readv(urev_op_common_t *common)
+static inline void urev_handle_readv_or_writev(urev_op_common_t *common)
 {
     urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) common;
     op->handler(op);
 }
 
-static inline void urev_handle_recv(urev_op_common_t *common)
-{
-    urev_recv_or_send_op_t *op = (urev_recv_or_send_op_t *) common;
-    op->handler(op);
-}
-
-static inline void urev_handle_send(urev_op_common_t *common)
+static inline void urev_handle_recv_or_send(urev_op_common_t *common)
 {
     urev_recv_or_send_op_t *op = (urev_recv_or_send_op_t *) common;
     op->handler(op);
@@ -576,18 +570,6 @@ static inline void urev_handle_timeout(urev_op_common_t *common)
 static inline void urev_handle_timeout_cancel(urev_op_common_t *common)
 {
     urev_timeout_cancel_op_t *op = (urev_timeout_cancel_op_t *) common;
-    op->handler(op);
-}
-
-static inline void urev_handle_write(urev_op_common_t *common)
-{
-    urev_read_or_write_op_t *op = (urev_read_or_write_op_t *) common;
-    op->handler(op);
-}
-
-static inline void urev_handle_writev(urev_op_common_t *common)
-{
-    urev_readv_or_writev_op_t *op = (urev_readv_or_writev_op_t *) common;
     op->handler(op);
 }
 
@@ -621,16 +603,16 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         urev_handle_openat2(op);
         break;
     case IORING_OP_READ:
-        urev_handle_read(op);
+    case IORING_OP_WRITE:
+        urev_handle_read_or_write(op);
         break;
     case IORING_OP_READV:
-        urev_handle_readv(op);
+    case IORING_OP_WRITEV:
+        urev_handle_readv_or_writev(op);
         break;
     case IORING_OP_RECV:
-        urev_handle_recv(op);
-        break;
     case IORING_OP_SEND:
-        urev_handle_send(op);
+        urev_handle_recv_or_send(op);
         break;
     case IORING_OP_RECVMSG:
     case IORING_OP_SENDMSG:
@@ -644,12 +626,6 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
         break;
     case IORING_OP_TIMEOUT_REMOVE:
         urev_handle_timeout_cancel(op);
-        break;
-    case IORING_OP_WRITE:
-        urev_handle_write(op);
-        break;
-    case IORING_OP_WRITEV:
-        urev_handle_writev(op);
         break;
     default:
         fprintf(stderr, "unsupported opcode in urev_handle_completion, opcode=%d\n", op->opcode);
