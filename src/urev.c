@@ -78,6 +78,22 @@ int urev_prep_close(urev_queue_t *queue, urev_close_op_t *op)
     return 0;
 }
 
+int urev_prep_fadvise(urev_queue_t *queue, urev_fadvise_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_fadvise(sqe, op->fd, op->offset, op->len, op->advice);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
 int urev_prep_fallocate(urev_queue_t *queue, urev_fallocate_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -104,6 +120,22 @@ int urev_prep_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
         return ret;
     }
     io_uring_prep_fsync(sqe, op->fd, op->fsync_flags);
+    op->common.opcode = sqe->opcode;
+    op->common.queue = queue;
+    io_uring_sqe_set_data(sqe, op);
+    return 0;
+}
+
+int urev_prep_madvise(urev_queue_t *queue, urev_madvise_op_t *op)
+{
+    struct io_uring_sqe* sqe;
+    int ret;
+
+    ret = urev_get_sqe(queue, &sqe);
+    if (ret < 0) {
+        return ret;
+    }
+    io_uring_prep_madvise(sqe, op->addr, op->length, op->advice);
     op->common.opcode = sqe->opcode;
     op->common.queue = queue;
     io_uring_sqe_set_data(sqe, op);
@@ -529,6 +561,12 @@ static inline void urev_handle_close(urev_op_common_t *common)
     op->handler(op);
 }
 
+static inline void urev_handle_fadvise(urev_op_common_t *common)
+{
+    urev_fadvise_op_t *op = (urev_fadvise_op_t *) common;
+    op->handler(op);
+}
+
 static inline void urev_handle_fallocate(urev_op_common_t *common)
 {
     urev_fallocate_op_t *op = (urev_fallocate_op_t *) common;
@@ -538,6 +576,12 @@ static inline void urev_handle_fallocate(urev_op_common_t *common)
 static inline void urev_handle_fsync(urev_op_common_t *common)
 {
     urev_fsync_op_t *op = (urev_fsync_op_t *) common;
+    op->handler(op);
+}
+
+static inline void urev_handle_madvise(urev_op_common_t *common)
+{
+    urev_madvise_op_t *op = (urev_madvise_op_t *) common;
     op->handler(op);
 }
 
@@ -615,11 +659,17 @@ void urev_handle_completion(urev_queue_t *queue, struct io_uring_cqe *cqe)
     case IORING_OP_CLOSE:
         urev_handle_close(op);
         break;
+    case IORING_OP_FADVISE:
+        urev_handle_fadvise(op);
+        break;
     case IORING_OP_FALLOCATE:
         urev_handle_fallocate(op);
         break;
     case IORING_OP_FSYNC:
         urev_handle_fsync(op);
+        break;
+    case IORING_OP_MADVISE:
+        urev_handle_madvise(op);
         break;
     case IORING_OP_OPENAT:
         urev_handle_openat(op);
