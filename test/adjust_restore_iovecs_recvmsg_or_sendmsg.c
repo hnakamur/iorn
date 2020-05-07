@@ -32,12 +32,13 @@ static size_t copy_to_iovecs(unsigned nr_vecs, struct iovec *vecs, void *src, si
     return copied;
 }
 
-static int test_adjut_restore_iovecs(void)
+static int test_adjut_restore_iovecs_recvmsg_or_sendmsg(void)
 {
     int i, j;
     unsigned char src_buf[BUF_LEN * NR_VECS], dst_buf[BUF_LEN * NR_VECS];
     struct iovec vecs[NR_VECS];
-    urev_readv_or_writev_op_t op;
+    struct msghdr msg;
+    urev_recvmsg_or_sendmsg_op_t op;
     size_t n, copied, total_length, total_copied;
     size_t lengths[] = { 5, 16, 0, 9, 11, 9 };
 
@@ -51,32 +52,34 @@ static int test_adjut_restore_iovecs(void)
     //fprintf(stderr, "%s\n", src_buf);
     //fprintf(stderr, "---\n");
 
-    memset(&op, 0, sizeof(urev_readv_or_writev_op_t));
+    memset(&op, 0, sizeof(urev_recvmsg_or_sendmsg_op_t));
     memset(dst_buf, 0, sizeof(dst_buf));
-    op.nr_vecs = NR_VECS;
-    op.iovecs = vecs;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iovlen = NR_VECS;
+    msg.msg_iov = vecs;
     for (i = 0; i < NR_VECS; i++) {
         vecs[i].iov_len = BUF_LEN;
         vecs[i].iov_base = dst_buf + BUF_LEN * i;
         //fprintf(stderr, "i=%d, iov_base=%p\n", i, vecs[i].iov_base);
     }
+    op.msg = &msg;
 
     total_length = total_copied = 0;
     for (i = 0; i < sizeof(lengths) / sizeof(size_t); i++) {
         n = lengths[i];
-        copied = copy_to_iovecs(op.nr_vecs, op.iovecs, src_buf + total_length, n);
+        copied = copy_to_iovecs(op.msg->msg_iovlen, op.msg->msg_iov, src_buf + total_length, n);
         total_length += n;
         if (copied != n) {
             fprintf(stderr, "unexpected copied=%ld, n=%ld\n", copied, n);
         }
         //fprintf(stderr, "after copy i=%d, dst_buf=[%s]\n", i, dst_buf);
-        _urev_adjust_after_short_readv_or_writev(&op, n);
+        __urev_adjust_after_short_recvmsg_or_sendmsg(&op, n);
     }
-    _urev_restore_after_short_readv_or_writev(&op);
+    __urev_restore_after_short_recvmsg_or_sendmsg(&op);
 
     //for (i = 0; i < NR_VECS; i++) {
-    //    if (memcmp(src_buf + BUF_LEN * i, op.iovecs[i].iov_base, op.iovecs[i].iov_len) != 0) {
-    //        fprintf(stderr, "unmatched bytes in vec %i, [%s], [%s]\n", i, src_buf + BUF_LEN * i, (const char *) op.iovecs[i].iov_base);
+    //    if (memcmp(src_buf + BUF_LEN * i, op.msg->msg_iov[i].iov_base, op.msg->msg_iov[i].iov_len) != 0) {
+    //        fprintf(stderr, "unmatched bytes in vec %i, [%s], [%s]\n", i, src_buf + BUF_LEN * i, (const char *) op.msg->msg_iov[i].iov_base);
     //    }
     //}
 
@@ -94,9 +97,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    ret = test_adjut_restore_iovecs();
+    ret = test_adjut_restore_iovecs_recvmsg_or_sendmsg();
     if (ret) {
-        fprintf(stderr, "test_adjut_restore_iovecs failed\n");
+        fprintf(stderr, "test_adjut_restore_iovecs_recvmsg_or_sendmsg failed\n");
         return ret;
     }
 

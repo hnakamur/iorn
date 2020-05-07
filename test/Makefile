@@ -14,11 +14,13 @@ ifneq ($(MAKECMDGOALS),clean)
 include ../config-host.mak
 endif
 
-all_targets += adjust_restore_iovecs
+all_targets += adjust_restore_iovecs_readv_or_writev \
+               adjust_restore_iovecs_recvmsg_or_sendmsg
 
 all: $(all_targets)
 
-test_srcs := adjust_restore_iovecs.c
+test_srcs := adjust_restore_iovecs_readv_or_writev.c \
+             adjust_restore_iovecs_recvmsg_or_sendmsg.c
 
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 

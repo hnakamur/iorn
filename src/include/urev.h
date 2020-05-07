@@ -271,7 +271,6 @@ struct urev_recv_or_send_op {
     void   *buf;
     size_t  len;
     int     flags;
-    off_t   offset;
 
     size_t  nbytes_total;
     size_t  nbytes_done;
@@ -404,9 +403,15 @@ void urev_handle_short_read(urev_read_or_write_op_t *op);
 void urev_handle_short_write(urev_read_or_write_op_t *op);
 void urev_handle_short_readv(urev_readv_or_writev_op_t *op);
 void urev_handle_short_writev(urev_readv_or_writev_op_t *op);
+void urev_handle_short_recv(urev_recv_or_send_op_t *op);
+void urev_handle_short_send(urev_recv_or_send_op_t *op);
+void urev_handle_short_recvmsg(urev_recvmsg_or_sendmsg_op_t *op);
+void urev_handle_short_sendmsg(urev_recvmsg_or_sendmsg_op_t *op);
 
 /* NOTE: These functions are exported just for testing. */
-void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance);
-void _urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op);
+void __urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance);
+void __urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op);
+void __urev_adjust_after_short_recvmsg_or_sendmsg(urev_recvmsg_or_sendmsg_op_t *op, size_t nr_advance);
+void __urev_restore_after_short_recvmsg_or_sendmsg(urev_recvmsg_or_sendmsg_op_t *op);
 
 #endif

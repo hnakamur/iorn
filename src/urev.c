@@ -332,81 +332,6 @@ int urev_prep_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     return 0;
 }
 
-static void urev_adjust_after_short_read_or_write(urev_read_or_write_op_t *op, int32_t nr_advance)
-{
-    if (op->saved_buf == NULL) {
-        op->saved_buf = op->buf;
-        op->saved_nbytes = op->nbytes;
-        op->saved_offset = op->offset;
-    }
-    op->buf += nr_advance;
-    op->nbytes -= nr_advance;
-    op->offset += nr_advance;
-}
-
-static void urev_restore_after_short_read_or_write(urev_read_or_write_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_buf != NULL) {
-        op->buf = op->saved_buf;
-        op->nbytes = op->saved_nbytes;
-        op->offset = op->saved_offset;
-    }
-}
-
-void urev_handle_short_read(urev_read_or_write_op_t *op)
-{
-    int res;
-
-    res = op->common.cqe_res;
-    if (res < 0) {
-        if (res == -EAGAIN) {
-            res = urev_prep_read(op->common.queue, op);
-        }
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    if (op->nbytes_done < op->nbytes_total) {
-        urev_adjust_after_short_read_or_write(op, res);
-        res = urev_prep_read(op->common.queue, op);
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    urev_restore_after_short_read_or_write(op);
-}
-
-void urev_handle_short_write(urev_read_or_write_op_t *op)
-{
-    int res;
-
-    res = op->common.cqe_res;
-    if (res < 0) {
-        if (res == -EAGAIN) {
-            res = urev_prep_write(op->common.queue, op);
-        }
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    if (op->nbytes_done < op->nbytes_total) {
-        urev_adjust_after_short_read_or_write(op, res);
-        res = urev_prep_write(op->common.queue, op);
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    urev_restore_after_short_read_or_write(op);
-}
-
 int urev_prep_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
 {
     struct io_uring_sqe* sqe;
@@ -449,112 +374,6 @@ int urev_prep_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op)
     op->saved_offset = 0;
     io_uring_sqe_set_data(sqe, op);
     return 0;
-}
-
-/* NOTE: This function is not static for testing. */
-void _urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance)
-{
-    struct iovec *vec;
-
-    if (op->saved_iovecs == NULL) {
-        op->saved_nr_vecs = op->nr_vecs;
-        op->saved_iovecs = op->iovecs;
-        op->saved_offset = op->offset;
-    }
-    op->offset += nr_advance;
-
-    vec = &op->iovecs[0];
-    if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
-        nr_advance -= vec->iov_len;
-
-        vec->iov_len += vec->iov_base - op->saved_iov_base;
-        vec->iov_base = op->saved_iov_base;
-        op->saved_iov_base = NULL;
-
-        op->nr_vecs--;
-        vec++;
-    }
-    while (nr_advance > 0 && op->nr_vecs > 0 && nr_advance > vec->iov_len) {
-        op->nr_vecs--;
-        vec++;
-        nr_advance -= vec->iov_len;
-    }
-
-    if (nr_advance != 0 && op->saved_iov_base == NULL) {
-        op->saved_iov_base = vec->iov_base;
-    }
-    vec->iov_base += nr_advance;
-    vec->iov_len -= nr_advance;
-    op->iovecs = vec;
-}
-
-/* NOTE: This function is not static for testing. */
-void _urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_iovecs != NULL) {
-        if (op->saved_iov_base != NULL) {
-            op->iovecs[0].iov_len += op->iovecs[0].iov_base - op->saved_iov_base;
-            op->iovecs[0].iov_base = op->saved_iov_base;
-            op->saved_iov_base = NULL;
-        }
-        op->iovecs = op->saved_iovecs;
-        op->nr_vecs = op->saved_nr_vecs;
-        op->offset = op->saved_offset;
-    }
-}
-
-void urev_handle_short_readv(urev_readv_or_writev_op_t *op)
-{
-    int res;
-
-    res = op->common.cqe_res;
-    if (res < 0) {
-        if (res == -EAGAIN) {
-            res = urev_prep_readv(op->common.queue, op);
-        }
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    if (op->nbytes_done < op->nbytes_total) {
-        _urev_adjust_after_short_readv_or_writev(op, res);
-        res = urev_prep_readv(op->common.queue, op);
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    _urev_restore_after_short_readv_or_writev(op);
-}
-
-void urev_handle_short_writev(urev_readv_or_writev_op_t *op)
-{
-    int res;
-
-    res = op->common.cqe_res;
-    if (res < 0) {
-        if (res == -EAGAIN) {
-            res = urev_prep_writev(op->common.queue, op);
-        }
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    if (op->nbytes_done < op->nbytes_total) {
-        _urev_adjust_after_short_readv_or_writev(op, res);
-        res = urev_prep_writev(op->common.queue, op);
-        if (res < 0) {
-            urev_op_set_err_code(&op->common, -res);
-        }
-        return;
-    }
-
-    _urev_restore_after_short_readv_or_writev(op);
 }
 
 int urev_prep_timeout(urev_queue_t *queue, urev_timeout_op_t *op)
@@ -834,4 +653,360 @@ int urev_submit(urev_queue_t *queue)
             return ret;
         }
     }
+}
+
+static void urev_adjust_after_short_read_or_write(urev_read_or_write_op_t *op, int32_t nr_advance)
+{
+    if (op->saved_buf == NULL) {
+        op->saved_buf = op->buf;
+        op->saved_nbytes = op->nbytes;
+        op->saved_offset = op->offset;
+    }
+    op->buf += nr_advance;
+    op->nbytes -= nr_advance;
+    op->offset += nr_advance;
+}
+
+static void urev_restore_after_short_read_or_write(urev_read_or_write_op_t *op)
+{
+    if (op->nbytes_done == op->nbytes_total && op->saved_buf != NULL) {
+        op->buf = op->saved_buf;
+        op->nbytes = op->saved_nbytes;
+        op->offset = op->saved_offset;
+    }
+}
+
+void urev_handle_short_read(urev_read_or_write_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_read(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        urev_adjust_after_short_read_or_write(op, res);
+        res = urev_prep_read(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    urev_restore_after_short_read_or_write(op);
+}
+
+void urev_handle_short_write(urev_read_or_write_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_write(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        urev_adjust_after_short_read_or_write(op, res);
+        res = urev_prep_write(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    urev_restore_after_short_read_or_write(op);
+}
+
+static void urev_adjust_after_short_recv_or_send(urev_recv_or_send_op_t *op, size_t nr_advance)
+{
+    if (op->saved_buf == NULL) {
+        op->saved_buf = op->buf;
+        op->saved_len = op->len;
+    }
+    op->buf += nr_advance;
+    op->len -= nr_advance;
+}
+
+static void urev_restore_after_short_recv_or_send(urev_recv_or_send_op_t *op)
+{
+    if (op->nbytes_done == op->nbytes_total && op->saved_buf != NULL) {
+        op->buf = op->saved_buf;
+        op->saved_len = op->len;
+    }
+}
+
+void urev_handle_short_recv(urev_recv_or_send_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_recv(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        urev_adjust_after_short_recv_or_send(op, res);
+        res = urev_prep_recv(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    urev_restore_after_short_recv_or_send(op);
+}
+
+void urev_handle_short_send(urev_recv_or_send_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_send(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        urev_adjust_after_short_recv_or_send(op, res);
+        res = urev_prep_send(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    urev_restore_after_short_recv_or_send(op);
+}
+
+/* NOTE: This function is not static for testing. */
+void __urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance)
+{
+    struct iovec *vec;
+
+    if (op->saved_iovecs == NULL) {
+        op->saved_nr_vecs = op->nr_vecs;
+        op->saved_iovecs = op->iovecs;
+        op->saved_offset = op->offset;
+    }
+    op->offset += nr_advance;
+
+    vec = &op->iovecs[0];
+    if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
+        nr_advance -= vec->iov_len;
+
+        vec->iov_len += vec->iov_base - op->saved_iov_base;
+        vec->iov_base = op->saved_iov_base;
+        op->saved_iov_base = NULL;
+
+        op->nr_vecs--;
+        vec++;
+    }
+    while (nr_advance > 0 && op->nr_vecs > 0 && nr_advance > vec->iov_len) {
+        op->nr_vecs--;
+        vec++;
+        nr_advance -= vec->iov_len;
+    }
+
+    if (nr_advance != 0 && op->saved_iov_base == NULL) {
+        op->saved_iov_base = vec->iov_base;
+    }
+    vec->iov_base += nr_advance;
+    vec->iov_len -= nr_advance;
+    op->iovecs = vec;
+}
+
+/* NOTE: This function is not static for testing. */
+void __urev_restore_after_short_readv_or_writev(urev_readv_or_writev_op_t *op)
+{
+    if (op->nbytes_done == op->nbytes_total && op->saved_iovecs != NULL) {
+        if (op->saved_iov_base != NULL) {
+            op->iovecs[0].iov_len += op->iovecs[0].iov_base - op->saved_iov_base;
+            op->iovecs[0].iov_base = op->saved_iov_base;
+            op->saved_iov_base = NULL;
+        }
+        op->iovecs = op->saved_iovecs;
+        op->nr_vecs = op->saved_nr_vecs;
+        op->offset = op->saved_offset;
+    }
+}
+
+void urev_handle_short_readv(urev_readv_or_writev_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_readv(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        __urev_adjust_after_short_readv_or_writev(op, res);
+        res = urev_prep_readv(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    __urev_restore_after_short_readv_or_writev(op);
+}
+
+void urev_handle_short_writev(urev_readv_or_writev_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_writev(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        __urev_adjust_after_short_readv_or_writev(op, res);
+        res = urev_prep_writev(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    __urev_restore_after_short_readv_or_writev(op);
+}
+
+/* NOTE: This function is not static for testing. */
+void __urev_adjust_after_short_recvmsg_or_sendmsg(urev_recvmsg_or_sendmsg_op_t *op, size_t nr_advance)
+{
+    struct iovec *vec;
+
+    if (op->saved_iov == NULL) {
+        op->saved_iovlen = op->msg->msg_iovlen;
+        op->saved_iov = op->msg->msg_iov;
+    }
+
+    vec = &op->msg->msg_iov[0];
+    if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
+        nr_advance -= vec->iov_len;
+
+        vec->iov_len += vec->iov_base - op->saved_iov_base;
+        vec->iov_base = op->saved_iov_base;
+        op->saved_iov_base = NULL;
+
+        op->msg->msg_iovlen--;
+        vec++;
+    }
+    while (nr_advance > 0 && op->msg->msg_iovlen > 0 && nr_advance > vec->iov_len) {
+        op->msg->msg_iovlen--;
+        vec++;
+        nr_advance -= vec->iov_len;
+    }
+
+    if (nr_advance != 0 && op->saved_iov_base == NULL) {
+        op->saved_iov_base = vec->iov_base;
+    }
+    vec->iov_base += nr_advance;
+    vec->iov_len -= nr_advance;
+    op->msg->msg_iov = vec;
+}
+
+/* NOTE: This function is not static for testing. */
+void __urev_restore_after_short_recvmsg_or_sendmsg(urev_recvmsg_or_sendmsg_op_t *op)
+{
+    if (op->nbytes_done == op->nbytes_total && op->saved_iov != NULL) {
+        if (op->saved_iov_base != NULL) {
+            op->msg->msg_iov[0].iov_len += op->msg->msg_iov[0].iov_base - op->saved_iov_base;
+            op->msg->msg_iov[0].iov_base = op->saved_iov_base;
+            op->saved_iov_base = NULL;
+        }
+        op->msg->msg_iov = op->saved_iov;
+        op->msg->msg_iovlen = op->saved_iovlen;
+    }
+}
+
+void urev_handle_short_recvmsg(urev_recvmsg_or_sendmsg_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_recvmsg(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        __urev_adjust_after_short_recvmsg_or_sendmsg(op, res);
+        res = urev_prep_recvmsg(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    __urev_restore_after_short_recvmsg_or_sendmsg(op);
+}
+
+void urev_handle_short_sendmsg(urev_recvmsg_or_sendmsg_op_t *op)
+{
+    int res;
+
+    res = op->common.cqe_res;
+    if (res < 0) {
+        if (res == -EAGAIN) {
+            res = urev_prep_sendmsg(op->common.queue, op);
+        }
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    if (op->nbytes_done < op->nbytes_total) {
+        __urev_adjust_after_short_recvmsg_or_sendmsg(op, res);
+        res = urev_prep_sendmsg(op->common.queue, op);
+        if (res < 0) {
+            urev_op_set_err_code(&op->common, -res);
+        }
+        return;
+    }
+
+    __urev_restore_after_short_recvmsg_or_sendmsg(op);
 }
