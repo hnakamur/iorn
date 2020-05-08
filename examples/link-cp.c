@@ -56,7 +56,7 @@ static void on_src_closed(urev_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->infd = 0;
     free(op);
@@ -75,7 +75,7 @@ static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = on_src_closed;
     op->fd = ctx->infd;
     ret = urev_prep_close(queue, op);
@@ -90,7 +90,7 @@ static void on_dest_closed(urev_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->outfd = 0;
     free(op);
@@ -109,7 +109,7 @@ static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = on_dest_closed;
     op->fd = ctx->outfd;
     ret = urev_prep_close(queue, op);
@@ -145,7 +145,7 @@ static void handle_fsync_completion(urev_fsync_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
 
     close_src_and_dest(op->common.queue, ctx);
@@ -161,7 +161,7 @@ static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
         fprintf(stderr, "calloc in queue_fsync: %s\n", strerror(ENOMEM));
     }
 
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = handle_fsync_completion;
     op->fd = ctx->outfd;
     ret = urev_prep_fsync(queue, op);
@@ -197,7 +197,7 @@ static void handle_write_completion(urev_read_or_write_op_t *w_op)
 
     r_op = w_op + 1;
     queue = w_op->common.queue;
-    ctx = w_op->common.ctx;
+    ctx = w_op->common.handler_user_data;
     if (w_op->common.cqe_res < 0) {
         if (w_op->common.cqe_res == -ECANCELED) {
             queue_rw_pair_helper(queue, r_op, w_op);
@@ -236,7 +236,7 @@ static int queue_rw_pair(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t
     r_op = w_op + 1;
     buf = (void *) (r_op + 1);
 
-    r_op->common.ctx = ctx;
+    r_op->common.handler_user_data = ctx;
     r_op->handler = handle_read_completion;
     r_op->fd = ctx->infd;
     r_op->buf = buf;
@@ -244,7 +244,7 @@ static int queue_rw_pair(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t
     r_op->offset = offset;
     r_op->common.sqe_flags = IOSQE_IO_LINK;
 
-    w_op->common.ctx = ctx;
+    w_op->common.handler_user_data = ctx;
     w_op->handler = handle_write_completion;
     w_op->fd = ctx->outfd;
     w_op->buf = buf;
@@ -311,7 +311,7 @@ static void handle_open_src_completion(urev_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->infd = op->common.cqe_res;
@@ -328,7 +328,7 @@ static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path
     if (!op) {
         return -ENOMEM;
     }
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = handle_open_src_completion;
     op->dfd = AT_FDCWD;
     op->path = path;
@@ -345,7 +345,7 @@ static void handle_open_dest_completion(urev_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->outfd = op->common.cqe_res;
@@ -362,7 +362,7 @@ static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *pat
     if (!op) {
         return -ENOMEM;
     }
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = handle_open_dest_completion;
     op->dfd = AT_FDCWD;
     op->path = path;
@@ -381,7 +381,7 @@ static void handle_src_file_size_completion(urev_statx_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.ctx;
+    ctx = op->common.handler_user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->inmode = op->statxbuf->stx_mode;
     ctx->insize = op->statxbuf->stx_size;
@@ -398,7 +398,7 @@ static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *
     if (!op) {
         return -ENOMEM;
     }
-    op->common.ctx = ctx;
+    op->common.handler_user_data = ctx;
     op->handler = handle_src_file_size_completion;
     op->dfd = AT_FDCWD;
     op->path = path;

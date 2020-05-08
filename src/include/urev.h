@@ -144,7 +144,7 @@ struct urev_op_common {
     int           opcode;
     urev_queue_t *queue;
     unsigned      sqe_flags;
-    void         *ctx;
+    void         *handler_user_data;
     int32_t       cqe_res;
     uint32_t      cqe_flags;
     int           err_code;
