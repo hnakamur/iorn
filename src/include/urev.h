@@ -143,9 +143,11 @@ typedef void (*urev_timeout_cancel_handler_t)(urev_timeout_cancel_op_t *op);
 struct urev_op_common {
     int           opcode;
     urev_queue_t *queue;
-    int32_t       cqe_res;
-    int           err_code;
+    unsigned      sqe_flags;
     void         *ctx;
+    int32_t       cqe_res;
+    uint32_t      cqe_flags;
+    int           err_code;
 };
 
 struct urev_accept_op {
