@@ -8,11 +8,11 @@ ifneq ($(MAKECMDGOALS),clean)
 include ../config-host.mak
 endif
 
-all_targets += urev-cp urev-cp-vecs
+all_targets += urev-cp urev-cp-vecs link-cp
 
 all: $(all_targets)
 
-test_srcs := urev-cp.c urev-cp-vecs.c
+test_srcs := urev-cp.c urev-cp-vecs.c link-cp.c
 
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 

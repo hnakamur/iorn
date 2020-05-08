@@ -6,6 +6,7 @@
 
 /examples/urev-cp
 /examples/urev-cp-vecs
+/examples/link-cp
 
 /test/adjust_restore_iovecs_readv_or_writev
 /test/adjust_restore_iovecs_recvmsg_or_sendmsg
