@@ -7,6 +7,7 @@
 /examples/base-cp
 /examples/vecs-cp
 /examples/link-cp
+/examples/webserver
 
 /test/adjust_restore_iovecs_readv_or_writev
 /test/adjust_restore_iovecs_recvmsg_or_sendmsg
