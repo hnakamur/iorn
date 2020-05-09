@@ -1,8 +1,8 @@
 *.ol
 *.os
 
-/src/liburev.a
-/src/liburev.so*
+/src/libiorn.a
+/src/libiorn.so*
 
 /examples/urev-cp
 /examples/urev-cp-vecs

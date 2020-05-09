@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * gcc -Wall -O2 -D_GNU_SOURCE -o link-cp link-cp.c -luring -llink
+ * gcc -Wall -O2 -D_GNU_SOURCE -o link-cp link-cp.c -luring -liorn
  */
 #include <stdio.h>
 #include <fcntl.h>
@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <liburing.h>
-#include "urev.h"
+#include "iorn.h"
 
 #define QD    64
 #define BS    (32*1024)
@@ -30,11 +30,11 @@ typedef struct copy_ctx {
     int    all_done;
 } copy_ctx_t;
 
-static int setup_context(unsigned entries, urev_queue_t *queue, copy_ctx_t *ctx)
+static int setup_context(unsigned entries, iorn_queue_t *queue, copy_ctx_t *ctx)
 {
     int ret;
 
-    ret = urev_queue_init(entries, queue, 0);
+    ret = iorn_queue_init(entries, queue, 0);
     if (ret < 0) {
         fprintf(stderr, "queue_init: %s\n", strerror(-ret));
         return -1;
@@ -52,7 +52,7 @@ static inline void set_err_code(copy_ctx_t *ctx, int err_code)
     }
 }
 
-static void on_src_closed(urev_queue_t *queue, urev_close_op_t *op)
+static void on_src_closed(iorn_queue_t *queue, iorn_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -66,9 +66,9 @@ static void on_src_closed(urev_queue_t *queue, urev_close_op_t *op)
     }
 }
 
-static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
+static int queue_close_src(iorn_queue_t *queue, copy_ctx_t *ctx)
 {
-    urev_close_op_t *op;
+    iorn_close_op_t *op;
     int ret;
 
     op = calloc(1, sizeof(*op));
@@ -78,15 +78,15 @@ static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
     op->common.user_data = ctx;
     op->handler = on_src_closed;
     op->fd = ctx->infd;
-    ret = urev_prep_close(queue, op);
+    ret = iorn_prep_close(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_close: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
-static void on_dest_closed(urev_queue_t *queue, urev_close_op_t *op)
+static void on_dest_closed(iorn_queue_t *queue, iorn_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -100,9 +100,9 @@ static void on_dest_closed(urev_queue_t *queue, urev_close_op_t *op)
     }
 }
 
-static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+static int queue_close_dest(iorn_queue_t *queue, copy_ctx_t *ctx)
 {
-    urev_close_op_t *op;
+    iorn_close_op_t *op;
     int ret;
 
     op = calloc(1, sizeof(*op));
@@ -112,15 +112,15 @@ static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
     op->common.user_data = ctx;
     op->handler = on_dest_closed;
     op->fd = ctx->outfd;
-    ret = urev_prep_close(queue, op);
+    ret = iorn_prep_close(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_close: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_close: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
-static void close_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx)
+static void close_src_and_dest(iorn_queue_t *queue, copy_ctx_t *ctx)
 {
     int ret;
 
@@ -134,14 +134,14 @@ static void close_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx)
         fprintf(stderr, "queue_close_dest: %s\n", strerror(-ret));
         return;
     }
-    ret = urev_submit(queue);
+    ret = iorn_submit(queue);
     if (ret < 0) {
-        fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_submit: %s\n", strerror(-ret));
         return;
     }
 }
 
-static void on_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
+static void on_fsync(iorn_queue_t *queue, iorn_fsync_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -151,9 +151,9 @@ static void on_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
     close_src_and_dest(queue, ctx);
 }
 
-static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
+static void queue_fsync(iorn_queue_t *queue, copy_ctx_t *ctx)
 {
-    urev_fsync_op_t *op;
+    iorn_fsync_op_t *op;
     int ret;
 
     op = calloc(1, sizeof(*op));
@@ -164,35 +164,35 @@ static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
     op->common.user_data = ctx;
     op->handler = on_fsync;
     op->fd = ctx->outfd;
-    ret = urev_prep_fsync(queue, op);
+    ret = iorn_prep_fsync(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_fsync: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_fsync: %s\n", strerror(-ret));
     }
 }
 
-static int queue_rw_pair_helper(urev_queue_t *queue,
-    urev_read_or_write_op_t *r_op, urev_read_or_write_op_t *w_op)
+static int queue_rw_pair_helper(iorn_queue_t *queue,
+    iorn_read_or_write_op_t *r_op, iorn_read_or_write_op_t *w_op)
 {
     int ret;
 
-    ret = urev_prep_read(queue, r_op);
+    ret = iorn_prep_read(queue, r_op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_read: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_read: %s\n", strerror(-ret));
         return ret;
     }
 
-    ret = urev_prep_write(queue, w_op);
+    ret = iorn_prep_write(queue, w_op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_write: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_write: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
-static void on_write(urev_queue_t *queue, urev_read_or_write_op_t *w_op)
+static void on_write(iorn_queue_t *queue, iorn_read_or_write_op_t *w_op)
 {
     copy_ctx_t *ctx;
-    urev_read_or_write_op_t *r_op;
+    iorn_read_or_write_op_t *r_op;
 
     r_op = w_op + 1;
     ctx = w_op->common.user_data;
@@ -216,17 +216,17 @@ static void on_write(urev_queue_t *queue, urev_read_or_write_op_t *w_op)
     }
 }
 
-static void on_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
+static void on_read(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
 {
     /* do nothing */
 }
 
-static int queue_rw_pair(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
+static int queue_rw_pair(iorn_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
 {
-    urev_read_or_write_op_t *w_op, *r_op;
+    iorn_read_or_write_op_t *w_op, *r_op;
     void *buf;
 
-    w_op = calloc(1, 2 * sizeof(urev_read_or_write_op_t) + size);
+    w_op = calloc(1, 2 * sizeof(iorn_read_or_write_op_t) + size);
     if (!w_op) {
         return -ENOMEM;
     }
@@ -252,7 +252,7 @@ static int queue_rw_pair(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t
     return queue_rw_pair_helper(queue, r_op, w_op);
 }
 
-static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
+static int copy_file(iorn_queue_t *queue, copy_ctx_t *ctx)
 {
     off_t insize;
     off_t offset;
@@ -281,18 +281,18 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
             insize -= this_size;
             offset += this_size;
         }
-        ret = urev_submit(queue);
+        ret = iorn_submit(queue);
         if (ret < 0) {
-            fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+            fprintf(stderr, "iorn_submit: %s\n", strerror(-ret));
             break;
         }
 
         /*
          * Queue may be full at this point. Find at least one completion.
          */
-        ret = urev_wait_and_handle_completions(queue);
+        ret = iorn_wait_and_handle_completions(queue);
         if (ret < 0) {
-            fprintf(stderr, "urev_wait_and_handle_completions: %s\n",
+            fprintf(stderr, "iorn_wait_and_handle_completions: %s\n",
                         strerror(-ret));
             return ret;
         }
@@ -305,7 +305,7 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
     return 0;
 }
 
-static void on_src_open(urev_queue_t *queue, urev_openat_op_t *op)
+static void on_src_open(iorn_queue_t *queue, iorn_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -317,9 +317,9 @@ static void on_src_open(urev_queue_t *queue, urev_openat_op_t *op)
     free(op);
 }
 
-static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+static int queue_open_src(iorn_queue_t *queue, copy_ctx_t *ctx, const char *path)
 {
-    urev_openat_op_t *op;
+    iorn_openat_op_t *op;
     int ret;
 
     op = calloc(1, sizeof(*op));
@@ -331,15 +331,15 @@ static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path
     op->dfd = AT_FDCWD;
     op->path = path;
     op->flags = O_RDONLY;
-    ret = urev_prep_openat(queue, op);
+    ret = iorn_prep_openat(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_openat: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_openat: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
-static void on_dest_open(urev_queue_t *queue, urev_openat_op_t *op)
+static void on_dest_open(iorn_queue_t *queue, iorn_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -351,9 +351,9 @@ static void on_dest_open(urev_queue_t *queue, urev_openat_op_t *op)
     free(op);
 }
 
-static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+static int queue_open_dest(iorn_queue_t *queue, copy_ctx_t *ctx, const char *path)
 {
-    urev_openat_op_t *op;
+    iorn_openat_op_t *op;
     int ret;
 
     op = calloc(1, sizeof(*op));
@@ -366,16 +366,16 @@ static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *pat
     op->path = path;
     op->flags = O_WRONLY | O_CREAT | O_TRUNC;
     op->mode = 0644;
-    ret = urev_prep_openat(queue, op);
+    ret = iorn_prep_openat(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_openat: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_openat: %s\n", strerror(-ret));
         return ret;
     }
 
     return 0;
 }
 
-static void on_get_src_size(urev_queue_t *queue, urev_statx_op_t *op)
+static void on_get_src_size(iorn_queue_t *queue, iorn_statx_op_t *op)
 {
     copy_ctx_t *ctx;
 
@@ -386,9 +386,9 @@ static void on_get_src_size(urev_queue_t *queue, urev_statx_op_t *op)
     free(op);
 }
 
-static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *path)
+static int queue_get_src_size(iorn_queue_t *queue, copy_ctx_t *ctx, const char *path)
 {
-    urev_statx_op_t *op;
+    iorn_statx_op_t *op;
     struct statx *st;
     int ret;
 
@@ -403,16 +403,16 @@ static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *
     op->flags = 0;
     op->mask = STATX_MODE | STATX_SIZE | STATX_BLOCKS;
     op->statxbuf = (struct statx *)(op + 1);
-    ret = urev_prep_statx(queue, op);
+    ret = iorn_prep_statx(queue, op);
     if (ret < 0) {
-        fprintf(stderr, "urev_prep_statx: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_prep_statx: %s\n", strerror(-ret));
         return ret;
     }
 
     return 0;
 }
 
-static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *src_path, const char *dest_path)
+static int open_src_and_dest_and_get_src_size(iorn_queue_t *queue, copy_ctx_t *ctx, const char *src_path, const char *dest_path)
 {
     int ret;
 
@@ -431,14 +431,14 @@ static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *c
         fprintf(stderr, "queue_open_dest: %s\n", strerror(-ret));
         return 1;
     }
-    ret = urev_submit(queue);
+    ret = iorn_submit(queue);
     if (ret < 0) {
-        fprintf(stderr, "urev_submit: %s\n", strerror(-ret));
+        fprintf(stderr, "iorn_submit: %s\n", strerror(-ret));
         return 1;
     }
 
     while ((ctx->infd == 0 || ctx->outfd == 0 || ctx->insize == -1) && ctx->err_code == 0) {
-        ret = urev_wait_and_handle_completions(queue);
+        ret = iorn_wait_and_handle_completions(queue);
         if (ret < 0) {
             fprintf(stderr, "handle completions for open: %s\n",
                         strerror(-ret));
@@ -460,7 +460,7 @@ static int open_src_and_dest_and_get_src_size(urev_queue_t *queue, copy_ctx_t *c
 
 int main(int argc, char *argv[])
 {
-    urev_queue_t queue;
+    iorn_queue_t queue;
     copy_ctx_t ctx;
     int ret;
 
@@ -481,6 +481,6 @@ int main(int argc, char *argv[])
     if (copy_file(&queue, &ctx))
         return 1;
 
-    urev_queue_exit(&queue);
+    iorn_queue_exit(&queue);
     return 0;
 }

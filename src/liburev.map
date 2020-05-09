@@ -1,7 +1,0 @@
-LIBURREV_0.1 {
-	global:
-		urev_get_sqe_safe;
-		urev_handle_completion;
-	local:
-		*;
-};

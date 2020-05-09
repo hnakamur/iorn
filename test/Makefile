@@ -25,7 +25,7 @@ test_srcs := adjust_restore_iovecs_readv_or_writev.c \
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 
 %: %.c
-	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ $< -luring -lurev $(XCFLAGS)
+	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ $< -luring -liorn $(XCFLAGS)
 
 clean:
 	@rm -f $(all_targets) $(test_objs)

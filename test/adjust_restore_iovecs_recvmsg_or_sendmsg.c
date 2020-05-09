@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "urev.h"
+#include "iorn.h"
 
 #define ENTRIES 20
 #define BUF_LEN 10
@@ -38,7 +38,7 @@ static int test_adjut_restore_iovecs_recvmsg_or_sendmsg(void)
     unsigned char src_buf[BUF_LEN * NR_VECS], dst_buf[BUF_LEN * NR_VECS];
     struct iovec vecs[NR_VECS];
     struct msghdr msg;
-    urev_recvmsg_or_sendmsg_op_t op;
+    iorn_recvmsg_or_sendmsg_op_t op;
     size_t n, copied, total_length, total_copied;
     size_t lengths[] = { 5, 16, 0, 9, 11, 9 };
 
@@ -52,7 +52,7 @@ static int test_adjut_restore_iovecs_recvmsg_or_sendmsg(void)
     //fprintf(stderr, "%s\n", src_buf);
     //fprintf(stderr, "---\n");
 
-    memset(&op, 0, sizeof(urev_recvmsg_or_sendmsg_op_t));
+    memset(&op, 0, sizeof(iorn_recvmsg_or_sendmsg_op_t));
     memset(dst_buf, 0, sizeof(dst_buf));
     memset(&msg, 0, sizeof(msg));
     msg.msg_iovlen = NR_VECS;
@@ -73,9 +73,9 @@ static int test_adjut_restore_iovecs_recvmsg_or_sendmsg(void)
             fprintf(stderr, "unexpected copied=%ld, n=%ld\n", copied, n);
         }
         //fprintf(stderr, "after copy i=%d, dst_buf=[%s]\n", i, dst_buf);
-        __urev_adjust_after_short_recvmsg_or_sendmsg(&op, n);
+        __iorn_adjust_after_short_recvmsg_or_sendmsg(&op, n);
     }
-    __urev_restore_after_short_recvmsg_or_sendmsg(&op);
+    __iorn_restore_after_short_recvmsg_or_sendmsg(&op);
 
     //for (i = 0; i < NR_VECS; i++) {
     //    if (memcmp(src_buf + BUF_LEN * i, op.msg->msg_iov[i].iov_base, op.msg->msg_iov[i].iov_len) != 0) {
@@ -89,9 +89,9 @@ static int test_adjut_restore_iovecs_recvmsg_or_sendmsg(void)
 int main(int argc, char *argv[])
 {
     int ret;
-    urev_queue_t queue;
+    iorn_queue_t queue;
 
-    ret = urev_queue_init(ENTRIES, &queue, 0);
+    ret = iorn_queue_init(ENTRIES, &queue, 0);
     if (ret < 0) {
         fprintf(stderr, "queue_init: %s\n", strerror(-ret));
         return -1;
