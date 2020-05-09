@@ -4,8 +4,8 @@
 /src/libiorn.a
 /src/libiorn.so*
 
-/examples/urev-cp
-/examples/urev-cp-vecs
+/examples/base-cp
+/examples/vecs-cp
 /examples/link-cp
 
 /test/adjust_restore_iovecs_readv_or_writev
