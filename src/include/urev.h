@@ -41,110 +41,126 @@ static inline void urev_queue_exit(urev_queue_t *queue)
 
 /**
  * completion handler type for a accept operation.
- * @param [in,out] op     a accept operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         an accept operation.
  */
-typedef void (*urev_accept_handler_t)(urev_accept_op_t *op);
+typedef void (*urev_accept_handler_t)(urev_queue_t *queue, urev_accept_op_t *op);
 
 /**
  * completion handler type for a connect operation.
- * @param [in,out] op     a connect operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a connect operation.
  */
-typedef void (*urev_connect_handler_t)(urev_connect_op_t *op);
+typedef void (*urev_connect_handler_t)(urev_queue_t *queue, urev_connect_op_t *op);
 
 /**
  * completion handler type for a close operation.
- * @param [in,out] op     a close operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a close operation.
  */
-typedef void (*urev_close_handler_t)(urev_close_op_t *op);
+typedef void (*urev_close_handler_t)(urev_queue_t *queue, urev_close_op_t *op);
 
 /**
  * completion handler type for a fadvise operation.
- * @param [in,out] op     a fadvise operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a fadvise operation.
  */
-typedef void (*urev_fadvise_handler_t)(urev_fadvise_op_t *op);
+typedef void (*urev_fadvise_handler_t)(urev_queue_t *queue, urev_fadvise_op_t *op);
 
 /**
  * completion handler type for a fallocate operation.
- * @param [in,out] op     a fallocate operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a fallocate operation.
  */
-typedef void (*urev_fallocate_handler_t)(urev_fallocate_op_t *op);
+typedef void (*urev_fallocate_handler_t)(urev_queue_t *queue, urev_fallocate_op_t *op);
 
 /**
  * completion handler type for a fsync operation.
- * @param [in,out] op     a fsync operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a fsync operation.
  */
-typedef void (*urev_fsync_handler_t)(urev_fsync_op_t *op);
+typedef void (*urev_fsync_handler_t)(urev_queue_t *queue, urev_fsync_op_t *op);
 
 /**
  * completion handler type for a madvise operation.
- * @param [in,out] op     a madvise operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a madvise operation.
  */
-typedef void (*urev_madvise_handler_t)(urev_madvise_op_t *op);
+typedef void (*urev_madvise_handler_t)(urev_queue_t *queue, urev_madvise_op_t *op);
 
 /**
  * completion handler type for a openat operation.
- * @param [in,out] op     a openat operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a openat operation.
  */
-typedef void (*urev_openat_handler_t)(urev_openat_op_t *op);
+typedef void (*urev_openat_handler_t)(urev_queue_t *queue, urev_openat_op_t *op);
 
 /**
  * completion handler type for a openat2 operation.
- * @param [in,out] op     a openat2 operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a openat2 operation.
  */
-typedef void (*urev_openat2_handler_t)(urev_openat2_op_t *op);
+typedef void (*urev_openat2_handler_t)(urev_queue_t *queue, urev_openat2_op_t *op);
 
 /**
  * completion handler type for a read or write operation.
- * @param [in,out] op     a read or write operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a read or write operation.
  */
-typedef void (*urev_read_or_write_handler_t)(urev_read_or_write_op_t *op);
+typedef void (*urev_read_or_write_handler_t)(urev_queue_t *queue, urev_read_or_write_op_t *op);
 
 /**
  * completion handler type for a readv or writev operation.
- * @param [in,out] op     a readv or writev operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a readv or writev operation.
  */
-typedef void (*urev_readv_or_writev_handler_t)(urev_readv_or_writev_op_t *op);
+typedef void (*urev_readv_or_writev_handler_t)(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
 
 /**
  * completion handler type for a recv or send operation.
- * @param [in,out] op     a recv or send operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a recv or send operation.
  */
-typedef void (*urev_recv_or_send_handler_t)(urev_recv_or_send_op_t *op);
+typedef void (*urev_recv_or_send_handler_t)(urev_queue_t *queue, urev_recv_or_send_op_t *op);
 
 /**
  * completion handler type for a recvmsg or sendmsg operation.
- * @param [in,out] op     a recvmsg or sendmsg operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a recvmsg or sendmsg operation.
  */
-typedef void (*urev_recvmsg_or_sendmsg_handler_t)(urev_recvmsg_or_sendmsg_op_t *op);
+typedef void (*urev_recvmsg_or_sendmsg_handler_t)(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 
 /**
  * completion handler type for a splice operation.
- * @param [in,out] op     a splice operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a splice operation.
  */
-typedef void (*urev_splice_handler_t)(urev_splice_op_t *op);
+typedef void (*urev_splice_handler_t)(urev_queue_t *queue, urev_splice_op_t *op);
 
 /**
  * completion handler type for a statx operation.
- * @param [in,out] op     a statx operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a statx operation.
  */
-typedef void (*urev_statx_handler_t)(urev_statx_op_t *op);
+typedef void (*urev_statx_handler_t)(urev_queue_t *queue, urev_statx_op_t *op);
 
 /**
  * completion handler type for a timeout operation.
- * @param [in,out] op     a timeout operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a timeout operation.
  */
-typedef void (*urev_timeout_handler_t)(urev_timeout_op_t *op);
+typedef void (*urev_timeout_handler_t)(urev_queue_t *queue, urev_timeout_op_t *op);
 /**
  * completion handler type for a timeout_remove operation.
- * @param [in,out] op     a timeout_remove operation.
+ * @param [in,out] queue      a queue.
+ * @param [in,out] op         a timeout_remove operation.
  */
-typedef void (*urev_timeout_cancel_handler_t)(urev_timeout_cancel_op_t *op);
+typedef void (*urev_timeout_cancel_handler_t)(urev_queue_t *queue, urev_timeout_cancel_op_t *op);
 
 struct urev_op_common {
     int           opcode;
-    urev_queue_t *queue;
     unsigned      sqe_flags;
-    void         *handler_user_data;
+    void         *user_data;
     int32_t       cqe_res;
     uint32_t      cqe_flags;
     int           err_code;
@@ -401,14 +417,14 @@ int urev_wait_and_handle_completions(urev_queue_t *queue);
  */
 int urev_submit(urev_queue_t *queue);
 
-void urev_handle_short_read(urev_read_or_write_op_t *op);
-void urev_handle_short_write(urev_read_or_write_op_t *op);
-void urev_handle_short_readv(urev_readv_or_writev_op_t *op);
-void urev_handle_short_writev(urev_readv_or_writev_op_t *op);
-void urev_handle_short_recv(urev_recv_or_send_op_t *op);
-void urev_handle_short_send(urev_recv_or_send_op_t *op);
-void urev_handle_short_recvmsg(urev_recvmsg_or_sendmsg_op_t *op);
-void urev_handle_short_sendmsg(urev_recvmsg_or_sendmsg_op_t *op);
+void urev_handle_short_read(urev_queue_t *queue, urev_read_or_write_op_t *op);
+void urev_handle_short_write(urev_queue_t *queue, urev_read_or_write_op_t *op);
+void urev_handle_short_readv(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
+void urev_handle_short_writev(urev_queue_t *queue, urev_readv_or_writev_op_t *op);
+void urev_handle_short_recv(urev_queue_t *queue, urev_recv_or_send_op_t *op);
+void urev_handle_short_send(urev_queue_t *queue, urev_recv_or_send_op_t *op);
+void urev_handle_short_recvmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
+void urev_handle_short_sendmsg(urev_queue_t *queue, urev_recvmsg_or_sendmsg_op_t *op);
 
 /* NOTE: These functions are exported just for testing. */
 void __urev_adjust_after_short_readv_or_writev(urev_readv_or_writev_op_t *op, size_t nr_advance);

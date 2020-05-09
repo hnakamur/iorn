@@ -52,11 +52,11 @@ static inline void set_err_code(copy_ctx_t *ctx, int err_code)
     }
 }
 
-static void on_src_closed(urev_close_op_t *op)
+static void on_src_closed(urev_queue_t *queue, urev_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->infd = 0;
     free(op);
@@ -75,7 +75,7 @@ static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.handler_user_data = ctx;
+    op->common.user_data = ctx;
     op->handler = on_src_closed;
     op->fd = ctx->infd;
     ret = urev_prep_close(queue, op);
@@ -86,11 +86,11 @@ static int queue_close_src(urev_queue_t *queue, copy_ctx_t *ctx)
     return 0;
 }
 
-static void on_dest_closed(urev_close_op_t *op)
+static void on_dest_closed(urev_queue_t *queue, urev_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->outfd = 0;
     free(op);
@@ -109,7 +109,7 @@ static int queue_close_dest(urev_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.handler_user_data = ctx;
+    op->common.user_data = ctx;
     op->handler = on_dest_closed;
     op->fd = ctx->outfd;
     ret = urev_prep_close(queue, op);
@@ -141,14 +141,14 @@ static void close_src_and_dest(urev_queue_t *queue, copy_ctx_t *ctx)
     }
 }
 
-static void handle_fsync_completion(urev_fsync_op_t *op)
+static void on_fsync(urev_queue_t *queue, urev_fsync_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
 
-    close_src_and_dest(op->common.queue, ctx);
+    close_src_and_dest(queue, ctx);
 }
 
 static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
@@ -161,8 +161,8 @@ static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
         fprintf(stderr, "calloc in queue_fsync: %s\n", strerror(ENOMEM));
     }
 
-    op->common.handler_user_data = ctx;
-    op->handler = handle_fsync_completion;
+    op->common.user_data = ctx;
+    op->handler = on_fsync;
     op->fd = ctx->outfd;
     ret = urev_prep_fsync(queue, op);
     if (ret < 0) {
@@ -170,12 +170,12 @@ static void queue_fsync(urev_queue_t *queue, copy_ctx_t *ctx)
     }
 }
 
-static void handle_write_completion(urev_read_or_write_op_t *op)
+static void on_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
-    urev_handle_short_write(op);
+    ctx = op->common.user_data;
+    urev_handle_short_write(queue, op);
     set_err_code(ctx, op->common.err_code);
     if (op->nbytes_done < op->nbytes_total) {
         return;
@@ -188,7 +188,7 @@ static void handle_write_completion(urev_read_or_write_op_t *op)
     free(op);
 
     if (ctx->write_left == 0) {
-        queue_fsync(op->common.queue, ctx);
+        queue_fsync(queue, ctx);
     }
 }
 
@@ -197,8 +197,8 @@ static void queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     copy_ctx_t *ctx;
     int ret;
 
-    ctx = op->common.handler_user_data;
-    op->handler = handle_write_completion;
+    ctx = op->common.user_data;
+    op->handler = on_write;
     op->fd = ctx->outfd;
     ret = urev_prep_write(queue, op);
     if (ret < 0) {
@@ -206,12 +206,12 @@ static void queue_write(urev_queue_t *queue, urev_read_or_write_op_t *op)
     }
 }
 
-static void handle_read_completion(urev_read_or_write_op_t *op)
+static void on_read(urev_queue_t *queue, urev_read_or_write_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
-    urev_handle_short_read(op);
+    ctx = op->common.user_data;
+    urev_handle_short_read(queue, op);
     set_err_code(ctx, op->common.err_code);
     if (op->nbytes_done < op->nbytes_total) {
         return;
@@ -221,7 +221,7 @@ static void handle_read_completion(urev_read_or_write_op_t *op)
      * All done for this read. queue up corresponding write.
      */
     ctx->read_left -= op->nbytes;
-    queue_write(op->common.queue, op);
+    queue_write(queue, op);
 }
 
 static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t offset)
@@ -234,8 +234,8 @@ static int queue_read(urev_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t of
         return -ENOMEM;
     }
 
-    op->common.handler_user_data = ctx;
-    op->handler = handle_read_completion;
+    op->common.user_data = ctx;
+    op->handler = on_read;
     op->fd = ctx->infd;
     op->buf = op + 1;
     op->nbytes = size;
@@ -301,11 +301,11 @@ static int copy_file(urev_queue_t *queue, copy_ctx_t *ctx)
     return 0;
 }
 
-static void handle_open_src_completion(urev_openat_op_t *op)
+static void on_src_open(urev_queue_t *queue, urev_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->infd = op->common.cqe_res;
@@ -322,8 +322,8 @@ static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path
     if (!op) {
         return -ENOMEM;
     }
-    op->common.handler_user_data = ctx;
-    op->handler = handle_open_src_completion;
+    op->common.user_data = ctx;
+    op->handler = on_src_open;
     op->dfd = AT_FDCWD;
     op->path = path;
     op->flags = O_RDONLY;
@@ -335,11 +335,11 @@ static int queue_open_src(urev_queue_t *queue, copy_ctx_t *ctx, const char *path
     return 0;
 }
 
-static void handle_open_dest_completion(urev_openat_op_t *op)
+static void on_dest_open(urev_queue_t *queue, urev_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->outfd = op->common.cqe_res;
@@ -356,8 +356,8 @@ static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *pat
     if (!op) {
         return -ENOMEM;
     }
-    op->common.handler_user_data = ctx;
-    op->handler = handle_open_dest_completion;
+    op->common.user_data = ctx;
+    op->handler = on_dest_open;
     op->dfd = AT_FDCWD;
     op->path = path;
     op->flags = O_WRONLY | O_CREAT | O_TRUNC;
@@ -371,11 +371,11 @@ static int queue_open_dest(urev_queue_t *queue, copy_ctx_t *ctx, const char *pat
     return 0;
 }
 
-static void handle_src_file_size_completion(urev_statx_op_t *op)
+static void on_get_src_size(urev_queue_t *queue, urev_statx_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.handler_user_data;
+    ctx = op->common.user_data;
     set_err_code(ctx, op->common.err_code);
     ctx->inmode = op->statxbuf->stx_mode;
     ctx->insize = op->statxbuf->stx_size;
@@ -392,8 +392,8 @@ static int queue_get_src_size(urev_queue_t *queue, copy_ctx_t *ctx, const char *
     if (!op) {
         return -ENOMEM;
     }
-    op->common.handler_user_data = ctx;
-    op->handler = handle_src_file_size_completion;
+    op->common.user_data = ctx;
+    op->handler = on_get_src_size;
     op->dfd = AT_FDCWD;
     op->path = path;
     op->flags = 0;
