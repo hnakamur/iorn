@@ -8,11 +8,11 @@ ifneq ($(MAKECMDGOALS),clean)
 include ../config-host.mak
 endif
 
-all_targets += base-cp vecs-cp link-cp webserver
+all_targets += base-cp vecs-cp link-cp webserver clock
 
 all: $(all_targets)
 
-test_srcs := base-cp.c vecs-cp.c link-cp.c webserver.c
+test_srcs := base-cp.c vecs-cp.c link-cp.c webserver.c clock.c
 
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 
