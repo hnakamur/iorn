@@ -58,7 +58,7 @@ static void on_src_closed(iorn_queue_t *queue, iorn_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
     ctx->infd = 0;
     free(op);
@@ -77,7 +77,7 @@ static int queue_close_src(iorn_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_src_closed;
     op->fd = ctx->infd;
     ret = iorn_prep_close(queue, op);
@@ -92,7 +92,7 @@ static void on_dest_close(iorn_queue_t *queue, iorn_close_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
     ctx->outfd = 0;
     free(op);
@@ -111,7 +111,7 @@ static int queue_close_dest(iorn_queue_t *queue, copy_ctx_t *ctx)
     if (!op) {
         return -ENOMEM;
     }
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_dest_close;
     op->fd = ctx->outfd;
     ret = iorn_prep_close(queue, op);
@@ -147,7 +147,7 @@ static void on_fsync(iorn_queue_t *queue, iorn_fsync_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
 
     close_src_and_dest(queue, ctx);
@@ -163,7 +163,7 @@ static void queue_fsync(iorn_queue_t *queue, copy_ctx_t *ctx)
         fprintf(stderr, "calloc in queue_fsync: %s\n", strerror(ENOMEM));
     }
 
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_fsync;
     op->fd = ctx->outfd;
     ret = iorn_prep_fsync(queue, op);
@@ -176,7 +176,7 @@ static void on_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     if (op->common.cqe_res > 0) {
         ctx->write_left -= op->common.cqe_res;
     }
@@ -202,7 +202,7 @@ static void queue_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     int ret;
 
     // fprintf(stderr, "queue_write start, op=%p\n", op);
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     op->handler = on_writev;
     op->fd = ctx->outfd;
     // fprintf(stderr, "before iorn_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
@@ -216,7 +216,7 @@ static void on_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     if (op->common.cqe_res > 0) {
         ctx->read_left -= op->common.cqe_res;
     }
@@ -247,7 +247,7 @@ static int queue_readv(iorn_queue_t *queue, copy_ctx_t *ctx, off_t size, off_t o
         return -ENOMEM;
     }
 
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_readv;
     op->fd = ctx->infd;
     op->nr_vecs = nr_vecs;
@@ -324,7 +324,7 @@ static void on_src_open(iorn_queue_t *queue, iorn_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->infd = op->common.cqe_res;
@@ -341,7 +341,7 @@ static int queue_open_src(iorn_queue_t *queue, copy_ctx_t *ctx, const char *path
     if (!op) {
         return -ENOMEM;
     }
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_src_open;
     op->dfd = AT_FDCWD;
     op->path = path;
@@ -358,7 +358,7 @@ static void on_dest_open(iorn_queue_t *queue, iorn_openat_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
     if (op->common.cqe_res > 0) {
         ctx->outfd = op->common.cqe_res;
@@ -375,7 +375,7 @@ static int queue_open_dest(iorn_queue_t *queue, copy_ctx_t *ctx, const char *pat
     if (!op) {
         return -ENOMEM;
     }
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_dest_open;
     op->dfd = AT_FDCWD;
     op->path = path;
@@ -394,7 +394,7 @@ static void on_get_src_size(iorn_queue_t *queue, iorn_statx_op_t *op)
 {
     copy_ctx_t *ctx;
 
-    ctx = op->common.user_data;
+    ctx = op->common.op_ctx;
     set_err_code(ctx, op->common.err_code);
     ctx->inmode = op->statxbuf->stx_mode;
     ctx->insize = op->statxbuf->stx_size;
@@ -411,7 +411,7 @@ static int queue_get_src_size(iorn_queue_t *queue, copy_ctx_t *ctx, const char *
     if (!op) {
         return -ENOMEM;
     }
-    op->common.user_data = ctx;
+    op->common.op_ctx = ctx;
     op->handler = on_get_src_size;
     op->dfd = AT_FDCWD;
     op->path = path;

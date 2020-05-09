@@ -160,7 +160,7 @@ typedef void (*iorn_timeout_cancel_handler_t)(iorn_queue_t *queue, iorn_timeout_
 struct iorn_op_common {
     int           opcode;
     unsigned      sqe_flags;
-    void         *user_data;
+    void         *op_ctx;
     int32_t       cqe_res;
     uint32_t      cqe_flags;
     int           err_code;

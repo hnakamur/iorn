@@ -129,7 +129,7 @@ int add_accept_request(int server_socket, struct sockaddr_in *client_addr,
     struct request *req = malloc(sizeof(*req));
 
     iorn_accept_op_t *op = calloc(1, sizeof(*op));
-    op->common.user_data = req;
+    op->common.op_ctx = req;
     op->handler = on_accept;
     op->fd = server_socket;
     op->addr = (struct sockaddr *) client_addr;
@@ -150,7 +150,7 @@ int add_accept_request(int server_socket, struct sockaddr_in *client_addr,
 
 static void on_accept(iorn_queue_t *queue, iorn_accept_op_t *op)
 {
-    struct request *req = op->common.user_data;
+    struct request *req = op->common.op_ctx;
     int ret = add_accept_request(op->fd,
             (struct sockaddr_in *) op->addr, (socklen_t *) op->addrlen);
     if (ret < 0) {
@@ -167,7 +167,7 @@ static void on_accept(iorn_queue_t *queue, iorn_accept_op_t *op)
 
 static void on_request_read(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
 {
-    struct request *req = op->common.user_data;
+    struct request *req = op->common.op_ctx;
     if (!op->common.cqe_res) {
         fprintf(stderr, "Empty request!\n");
         return;
@@ -195,7 +195,7 @@ static int add_read_request(int client_socket) {
     /* Linux kernel 5.5 has support for readv, but not for recv() or read() */
 
     iorn_readv_or_writev_op_t *op = calloc(1, sizeof(*op));
-    op->common.user_data = req;
+    op->common.op_ctx = req;
     op->handler = on_request_read;
     op->fd = client_socket;
     op->iovecs = &req->iov[0];
@@ -216,7 +216,7 @@ static int add_read_request(int client_socket) {
 
 static void on_request_written(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
 {
-    struct request *req = op->common.user_data;
+    struct request *req = op->common.op_ctx;
     for (int i = 0; i < req->iovec_count; i++) {
         free(req->iov[i].iov_base);
     }
@@ -227,7 +227,7 @@ static void on_request_written(iorn_queue_t *queue, iorn_readv_or_writev_op_t *o
 
 int add_write_request(struct request *req) {
     iorn_readv_or_writev_op_t *op = calloc(1, sizeof(*op));
-    op->common.user_data = req;
+    op->common.op_ctx = req;
     op->handler = on_request_written;
     op->fd = req->client_socket;
     op->iovecs = req->iov;
