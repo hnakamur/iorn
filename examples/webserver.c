@@ -6,27 +6,22 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
-#include <liburing.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "iorn.h"
 
 #define SERVER_STRING           "Server: zerohttpd/0.1\r\n"
 #define DEFAULT_SERVER_PORT     8000
 #define QUEUE_DEPTH             256
 #define READ_SZ                 16384
 
-#define EVENT_TYPE_ACCEPT       0
-#define EVENT_TYPE_READ         1
-#define EVENT_TYPE_WRITE        2
-
 struct request {
-    int event_type;
     int iovec_count;
     int client_socket;
     struct iovec iov[];
 };
 
-struct io_uring ring;
+struct iorn_queue queue;
 
 const char *unimplemented_content = \
         "HTTP/1.0 400 Bad Request\r\n"
@@ -55,6 +50,10 @@ const char *http_404_content = \
         "<p>Your client is asking for an object that was not found on this server.</p>"
         "</body>"
         "</html>";
+
+static void on_accept(iorn_queue_t *queue, iorn_accept_op_t *op);
+static int add_read_request(int client_socket);
+static int handle_client_request(struct request *req);
 
 /*
  * Utility function to convert a string to lower case.
@@ -127,44 +126,121 @@ int setup_listening_socket(int port) {
 
 int add_accept_request(int server_socket, struct sockaddr_in *client_addr,
                        socklen_t *client_addr_len) {
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
-    io_uring_prep_accept(sqe, server_socket, (struct sockaddr *) client_addr,
-                         client_addr_len, 0);
     struct request *req = malloc(sizeof(*req));
-    req->event_type = EVENT_TYPE_ACCEPT;
-    io_uring_sqe_set_data(sqe, req);
-    int ret = io_uring_submit(&ring);
+
+    iorn_accept_op_t *op = calloc(1, sizeof(*op));
+    op->common.user_data = req;
+    op->handler = on_accept;
+    op->fd = server_socket;
+    op->addr = (struct sockaddr *) client_addr;
+    op->addrlen = client_addr_len;
+
+    int ret = iorn_prep_accept(&queue, op);
     if (ret < 0) {
+        fprintf(stderr, "add_accept_request: iorn_prep_accept: %s\n", strerror(-ret));
+        return ret;
+    }
+    ret = iorn_submit(&queue);
+    if (ret < 0) {
+        fprintf(stderr, "add_accept_request: iorn_submit: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
-int add_read_request(int client_socket) {
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
+static void on_accept(iorn_queue_t *queue, iorn_accept_op_t *op)
+{
+    struct request *req = op->common.user_data;
+    int ret = add_accept_request(op->fd,
+            (struct sockaddr_in *) op->addr, (socklen_t *) op->addrlen);
+    if (ret < 0) {
+        fprintf(stderr, "Error in accept!\n");
+        exit(1);
+    }
+    ret = add_read_request(op->common.cqe_res);
+    if (ret < 0) {
+        fprintf(stderr, "Error in adding a request!\n");
+    }
+    free(req);
+    free(op);
+}
+
+static void on_request_read(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
+{
+    struct request *req = op->common.user_data;
+    if (!op->common.cqe_res) {
+        fprintf(stderr, "Empty request!\n");
+        return;
+    }
+    if (op->common.err_code) {
+        fprintf(stderr, "on_request_read err: %s", strerror(op->common.err_code));
+        return;
+    }
+    int ret = handle_client_request(req);
+    if (ret < 0) {
+        fprintf(stderr, "Error while handling client request.\n");
+        return;
+    }
+    free(req->iov[0].iov_base);
+    free(req);
+    free(op);
+}
+
+static int add_read_request(int client_socket) {
     struct request *req = malloc(sizeof(*req) + sizeof(struct iovec));
     req->iov[0].iov_base = malloc(READ_SZ);
     req->iov[0].iov_len = READ_SZ;
-    req->event_type = EVENT_TYPE_READ;
     req->client_socket = client_socket;
-	memset(req->iov[0].iov_base, 0, READ_SZ);
+    memset(req->iov[0].iov_base, 0, READ_SZ);
     /* Linux kernel 5.5 has support for readv, but not for recv() or read() */
-    io_uring_prep_readv(sqe, client_socket, &req->iov[0], 1, 0);
-    io_uring_sqe_set_data(sqe, req);
-    int ret = io_uring_submit(&ring);
+
+    iorn_readv_or_writev_op_t *op = calloc(1, sizeof(*op));
+    op->common.user_data = req;
+    op->handler = on_request_read;
+    op->fd = client_socket;
+    op->iovecs = &req->iov[0];
+    op->nr_vecs = 1;
+    op->offset = 0;
+    int ret = iorn_prep_readv(&queue, op);
     if (ret < 0) {
+        fprintf(stderr, "add_read_request: iorn_prep_readv: %s\n", strerror(-ret));
+        return ret;
+    }
+    ret = iorn_submit(&queue);
+    if (ret < 0) {
+        fprintf(stderr, "add_read_request: iorn_submit: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
 }
 
+static void on_request_written(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
+{
+    struct request *req = op->common.user_data;
+    for (int i = 0; i < req->iovec_count; i++) {
+        free(req->iov[i].iov_base);
+    }
+    close(req->client_socket);
+    free(req);
+    free(op);
+}
+
 int add_write_request(struct request *req) {
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
-    req->event_type = EVENT_TYPE_WRITE;
-    io_uring_prep_writev(sqe, req->client_socket, req->iov, req->iovec_count, 0);
-    io_uring_sqe_set_data(sqe, req);
-    int ret = io_uring_submit(&ring);
+    iorn_readv_or_writev_op_t *op = calloc(1, sizeof(*op));
+    op->common.user_data = req;
+    op->handler = on_request_written;
+    op->fd = req->client_socket;
+    op->iovecs = req->iov;
+    op->nr_vecs = req->iovec_count;
+    op->offset = 0;
+    int ret = iorn_prep_writev(&queue, op);
     if (ret < 0) {
+        fprintf(stderr, "add_write_request: iorn_prep_writev: %s\n", strerror(-ret));
+        return ret;
+    }
+    ret = iorn_submit(&queue);
+    if (ret < 0) {
+        fprintf(stderr, "add_write_request: iorn_submit: %s\n", strerror(-ret));
         return ret;
     }
     return 0;
@@ -383,7 +459,7 @@ int get_line(const char *src, char *dest, int dest_sz) {
     return 1;
 }
 
-int handle_client_request(struct request *req) {
+static int handle_client_request(struct request *req) {
     char http_request[1024];
     /* Get the first line, which will be the request */
     if(get_line(req->iov[0].iov_base, http_request, sizeof(http_request))) {
@@ -394,7 +470,6 @@ int handle_client_request(struct request *req) {
 }
 
 void server_loop(int server_socket) {
-    struct io_uring_cqe *cqe;
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
 
@@ -405,57 +480,15 @@ void server_loop(int server_socket) {
     }
 
     while (1) {
-        ret = io_uring_wait_cqe(&ring, &cqe);
-        struct request *req = (struct request *) cqe->user_data;
+        ret = iorn_wait_and_handle_completion(&queue);
         if (ret < 0)
-            fatal_error("io_uring_wait_cqe");
-        if (cqe->res < 0) {
-            fprintf(stderr, "Async request failed: %s for event: %d\n",
-                    strerror(-cqe->res), req->event_type);
-            exit(1);
-        }
-
-        switch (req->event_type) {
-            case EVENT_TYPE_ACCEPT:
-                ret = add_accept_request(server_socket, &client_addr, &client_addr_len);
-                if (ret < 0) {
-                    fprintf(stderr, "Error in accept!\n");
-                    exit(1);
-                }
-                ret = add_read_request(cqe->res);
-                if (ret < 0) {
-                    fprintf(stderr, "Error in adding a request!\n");
-                }
-                free(req);
-                break;
-            case EVENT_TYPE_READ:
-                if (!cqe->res) {
-                    fprintf(stderr, "Empty request!\n");
-                    break;
-                }
-                ret = handle_client_request(req);
-                if (ret < 0) {
-                    fprintf(stderr, "Error while handling client request.\n");
-                }
-                free(req->iov[0].iov_base);
-                free(req);
-                break;
-            case EVENT_TYPE_WRITE:
-                for (int i = 0; i < req->iovec_count; i++) {
-                    free(req->iov[i].iov_base);
-                }
-                close(req->client_socket);
-                free(req);
-                break;
-        }
-        /* Mark this request as processed */
-        io_uring_cqe_seen(&ring, cqe);
+            fatal_error("iorn_wait_and_handle_completion");
     }
 }
 
 void sigint_handler(int signo) {
     printf("^C pressed. Shutting down.\n");
-    io_uring_queue_exit(&ring);
+    iorn_queue_exit(&queue);
     exit(0);
 }
 
@@ -466,7 +499,7 @@ int main() {
         fprintf(stderr, "Error while setting a signal handler, errno=%d.\n", errno);
         return 1;
     }
-    int ret = io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
+    int ret = iorn_queue_init(QUEUE_DEPTH, &queue, 0);
     if (ret < 0) {
         fprintf(stderr, "Error while initializing uring queue.\n");
         return 1;
