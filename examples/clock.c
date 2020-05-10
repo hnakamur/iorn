@@ -20,7 +20,11 @@ static void on_timeout(iorn_queue_t *queue, iorn_timeout_op_t *op) {
         return;
     }
 
-    op->ts.tv_nsec = sec_in_nsec - ts.tv_nsec;
+    long *nsec_for_gettime = (long *) (op + 1);
+    op->ts.tv_nsec = sec_in_nsec - ts.tv_nsec - *nsec_for_gettime;
+    if (op->ts.tv_nsec < 0) {
+        op->ts.tv_nsec += sec_in_nsec;
+    }
     ret = iorn_prep_timeout(queue, op);
     if (ret < 0) {
         fprintf(stderr, "on_timeout err in prep_timeout, %s\n", strerror(-ret));
@@ -43,21 +47,38 @@ static void on_timeout(iorn_queue_t *queue, iorn_timeout_op_t *op) {
 }
 
 static int queue_timeout(iorn_queue_t *queue) {
-    iorn_timeout_op_t *op = calloc(1, sizeof(*op));
+    iorn_timeout_op_t *op = calloc(1, sizeof(*op) + sizeof(long));
     if (op == NULL) {
         return -ENOMEM;
     }
 
-    struct timespec ts;
-    int ret = clock_gettime(CLOCK_REALTIME, &ts);
+    struct timespec ts1;
+    int ret = clock_gettime(CLOCK_REALTIME, &ts1);
     if (ret < 0) {
         fprintf(stderr, "clock_gettime CLOCK_REALTIME error: %s\n", strerror(errno));
         return -errno;
     }
 
+    struct timespec ts2;
+    ret = clock_gettime(CLOCK_REALTIME, &ts2);
+    if (ret < 0) {
+        fprintf(stderr, "clock_gettime CLOCK_REALTIME error: %s\n", strerror(errno));
+        return -errno;
+    }
+
+    long *nsec_for_gettime = (long *) (op + 1);
+    *nsec_for_gettime = ts2.tv_nsec - ts1.tv_nsec;
+    if (*nsec_for_gettime < 0) {
+        *nsec_for_gettime += sec_in_nsec;
+    }
+    fprintf(stderr, "nsec_for_gettime=%ld\n", *nsec_for_gettime);
+
     op->handler = on_timeout;
     op->ts.tv_sec = 0;
-    op->ts.tv_nsec = sec_in_nsec - ts.tv_nsec;
+    op->ts.tv_nsec = sec_in_nsec - ts2.tv_nsec - *nsec_for_gettime;
+    if (op->ts.tv_nsec < 0) {
+        op->ts.tv_nsec += sec_in_nsec;
+    }
     op->count = 1;
 
     ret = iorn_prep_timeout(queue, op);
