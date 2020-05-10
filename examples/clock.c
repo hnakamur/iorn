@@ -20,9 +20,10 @@ static void on_timeout(iorn_queue_t *queue, iorn_timeout_op_t *op) {
     struct tm tm;
     localtime_r(&tv.tv_sec, &tm);
 
-    printf("on_timeout time=%04d-%02d-%02dT%02d:%02d:%02d\n",
+    printf("on_timeout time=%04d-%02d-%02dT%02d:%02d:%02d, sec=%d, usec=%d\n",
             1900 + tm.tm_year, tm.tm_mon + 1, tm.tm_mday,
-            tm.tm_hour, tm.tm_min, tm.tm_sec);
+            tm.tm_hour, tm.tm_min, tm.tm_sec,
+            tv.tv_sec, tv.tv_usec);
 
     op->ts.tv_sec++;
     ret = iorn_prep_timeout(queue, op);
