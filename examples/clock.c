@@ -10,22 +10,17 @@
 
 struct iorn_queue queue;
 
+const long sec_in_nsec = 1000000000;
+
 static void on_timeout(iorn_queue_t *queue, iorn_timeout_op_t *op) {
-    struct timeval tv;
-    int ret = gettimeofday(&tv, NULL);
+    struct timespec ts;
+    int ret = clock_gettime(CLOCK_REALTIME, &ts);
     if (ret < 0) {
-        fprintf(stderr, "on_timeout err in gettimeofday, %s\n", strerror(errno));
+        fprintf(stderr, "clock_gettime CLOCK_REALTIME error: %s\n", strerror(errno));
+        return;
     }
 
-    struct tm tm;
-    localtime_r(&tv.tv_sec, &tm);
-
-    printf("on_timeout time=%04d-%02d-%02dT%02d:%02d:%02d.%06ld\n",
-            1900 + tm.tm_year, tm.tm_mon + 1, tm.tm_mday,
-            tm.tm_hour, tm.tm_min, tm.tm_sec,
-            tv.tv_usec);
-
-    op->ts.tv_sec++;
+    op->ts.tv_nsec = sec_in_nsec - ts.tv_nsec;
     ret = iorn_prep_timeout(queue, op);
     if (ret < 0) {
         fprintf(stderr, "on_timeout err in prep_timeout, %s\n", strerror(-ret));
@@ -35,10 +30,17 @@ static void on_timeout(iorn_queue_t *queue, iorn_timeout_op_t *op) {
     ret = iorn_submit(queue); 
     if (ret < 0) {
         fprintf(stderr, "on_timeout err in submit, %s\n", strerror(-ret));
+        return;
     }
-}
 
-const long sec_in_nsec = 1000000000;
+    struct tm tm;
+    localtime_r(&ts.tv_sec, &tm);
+
+    printf("on_timeout time=%04d-%02d-%02dT%02d:%02d:%02d.%09ld\n",
+            1900 + tm.tm_year, tm.tm_mon + 1, tm.tm_mday,
+            tm.tm_hour, tm.tm_min, tm.tm_sec,
+            ts.tv_nsec);
+}
 
 static int queue_timeout(iorn_queue_t *queue) {
     iorn_timeout_op_t *op = calloc(1, sizeof(*op));
@@ -46,29 +48,17 @@ static int queue_timeout(iorn_queue_t *queue) {
         return -ENOMEM;
     }
 
-    struct timespec rts;
-    int ret = clock_gettime(CLOCK_REALTIME, &rts);
+    struct timespec ts;
+    int ret = clock_gettime(CLOCK_REALTIME, &ts);
     if (ret < 0) {
         fprintf(stderr, "clock_gettime CLOCK_REALTIME error: %s\n", strerror(errno));
         return -errno;
     }
-    long nsec_diff = sec_in_nsec - rts.tv_nsec;
-
-    ret = clock_gettime(CLOCK_MONOTONIC, &op->ts);
-    if (ret < 0) {
-        fprintf(stderr, "clock_gettime CLOCK_MONOTONIC error: %s\n", strerror(errno));
-        return -errno;
-    }
 
     op->handler = on_timeout;
-    op->ts.tv_sec++;
-    op->ts.tv_nsec += nsec_diff;
-    if (op->ts.tv_nsec > sec_in_nsec) {
-        op->ts.tv_sec++;
-        op->ts.tv_nsec -= sec_in_nsec;
-    }
+    op->ts.tv_sec = 0;
+    op->ts.tv_nsec = sec_in_nsec - ts.tv_nsec;
     op->count = 1;
-    op->flags = IORING_TIMEOUT_ABS;
 
     ret = iorn_prep_timeout(queue, op);
     if (ret < 0) {
