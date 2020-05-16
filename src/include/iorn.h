@@ -1,7 +1,9 @@
 #ifndef IORN_H
 #define IORN_H
 
-#include "iorn/uring.h"
+#include "iorn/error.h"
+#include "iorn/iovecs.h"
 #include "iorn/malloc.h"
+#include "iorn/uring.h"
 
 #endif

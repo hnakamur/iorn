@@ -1,4 +1,4 @@
-#include <stdlib.h>
+#include "iorn/malloc.h"
 
 void *iorn_malloc_std_calloc(size_t nmemb, size_t size, void *user_data)
 {
