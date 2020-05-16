@@ -1,7 +1,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include "iorn/error.h"
-#include "iorn/iovecs.h"
+#include "iorn/iovec_array.h"
 
 /* functions for iorn_iovec_t */
 
@@ -24,9 +24,9 @@ size_t iorn_iovec_restore_from_short_adjust(size_t adjusted_iov_len, void **adju
     return adjusted_iov_len;
 }
 
-/* functions for iorn_iovecs_t */
+/* functions for iorn_iovec_array_t */
 
-size_t iorn_iovecs_adjust_after_short(size_t vecs_len, iorn_iovec_t **vecs, size_t advance, iorn_iovec_t **save_vecs, void **save_iov_base)
+size_t iorn_iovec_array_adjust_after_short(size_t vecs_len, iorn_iovec_t **vecs, size_t advance, iorn_iovec_t **save_vecs, void **save_iov_base)
 {
     if (*save_vecs == NULL) {
         *save_vecs = *vecs;
@@ -49,7 +49,7 @@ size_t iorn_iovecs_adjust_after_short(size_t vecs_len, iorn_iovec_t **vecs, size
     return vecs_len;
 }
 
-size_t iorn_iovecs_restore_from_short_adjust(size_t adjusted_vecs_len, iorn_iovec_t **adjusted_vecs, iorn_iovec_t **save_vecs, void **save_iov_base)
+size_t iorn_iovec_array_restore_from_short_adjust(size_t adjusted_vecs_len, iorn_iovec_t **adjusted_vecs, iorn_iovec_t **save_vecs, void **save_iov_base)
 {
     if (*save_vecs != NULL) {
         (*adjusted_vecs)->iov_len = iorn_iovec_restore_from_short_adjust((*adjusted_vecs)->iov_len, &(*adjusted_vecs)->iov_base, save_iov_base);
@@ -60,7 +60,7 @@ size_t iorn_iovecs_restore_from_short_adjust(size_t adjusted_vecs_len, iorn_iove
     return adjusted_vecs_len;
 }
 
-iorn_negative_errno_t iorn_iovecs_resize(iorn_iovecs_t *vecs, size_t nmemb, iorn_malloc_t *ma)
+iorn_negative_errno_t iorn_iovec_array_resize(iorn_iovec_array_t *vecs, size_t nmemb, iorn_malloc_t *ma)
 {
     iorn_iovec_t *new_vecs = ma->reallocarray(vecs->vecs, nmemb, sizeof(iorn_iovec_t), ma->user_data);
     if (new_vecs == NULL) {
@@ -72,9 +72,9 @@ iorn_negative_errno_t iorn_iovecs_resize(iorn_iovecs_t *vecs, size_t nmemb, iorn
     return 0;
 }
 
-iorn_negative_errno_t iorn_iovecs_add_vec(iorn_iovecs_t *vecs, iorn_iovec_t *vec, iorn_malloc_t *ma)
+iorn_negative_errno_t iorn_iovec_array_add_vec(iorn_iovec_array_t *vecs, iorn_iovec_t *vec, iorn_malloc_t *ma)
 {
-    iorn_negative_errno_t ret = iorn_iovecs_resize(vecs, vecs->nmemb + 1, ma);
+    iorn_negative_errno_t ret = iorn_iovec_array_resize(vecs, vecs->nmemb + 1, ma);
     if (ret < 0) {
         return ret;
     }
@@ -82,10 +82,10 @@ iorn_negative_errno_t iorn_iovecs_add_vec(iorn_iovecs_t *vecs, iorn_iovec_t *vec
     return 0;
 }
 
-void iorn_iovecs_deep_free_ma(iorn_iovecs_t *vecs, iorn_malloc_t *ma)
+void iorn_iovec_array_deep_free_ma(iorn_iovec_array_t *vecs, iorn_malloc_t *ma)
 {
     for (int i = 0; i < vecs->nmemb; i++) {
         iorn_iovec_free_ma(vecs->vecs + i, ma);
     }
-    iorn_iovecs_shallow_free_ma(vecs, ma);
+    iorn_iovec_array_shallow_free_ma(vecs, ma);
 }

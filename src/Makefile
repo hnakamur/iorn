@@ -25,7 +25,7 @@ include ../Makefile.quiet
 
 all: $(all_targets)
 
-libiorn_srcs := iorn.c iorn_iovecs.c iorn_malloc.c
+libiorn_srcs := iorn.c iorn_iovec_array.c iorn_malloc.c
 
 libiorn_objs := $(patsubst %.c,%.ol,$(libiorn_srcs))
 libiorn_sobjs := $(patsubst %.c,%.os,$(libiorn_srcs))

@@ -2,7 +2,7 @@
 #define IORN_H
 
 #include "iorn/error.h"
-#include "iorn/iovecs.h"
+#include "iorn/iovec_array.h"
 #include "iorn/malloc.h"
 #include "iorn/uring.h"
 

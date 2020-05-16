@@ -68,31 +68,24 @@ static inline void iorn_iovec_free_ma(iorn_iovec_t *vec, iorn_malloc_t *ma)
     ma->free(vec->iov_base, ma->user_data);
 }
 
-/* iorn_iovecs_t */
+/* iorn_iovec_array_t */
 
-typedef struct iorn_iovecs iorn_iovecs_t;
-typedef struct iorn_iovecs_save_for_short iorn_iovecs_save_for_short_t;
+typedef struct iorn_iovec_array iorn_iovec_array_t;
 
-struct iorn_iovecs {
+struct iorn_iovec_array {
     size_t        nmemb;
     iorn_iovec_t *vecs;
 };
 
-struct iorn_iovecs_save_for_short {
-    iorn_iovec_t *vecs;
-    void         *iov_base;
-};
+#define IORN_IOVEC_ARRAY_EMPTY { .nmemb = 0, .vecs = NULL }
 
-#define IORN_IOVECS_EMPTY { .nmemb = 0, .vecs = NULL }
-#define IORN_IOVECS_SAVE_FOR_SHORT_EMPTY { .vecs = NULL, iov_base = NULL }
-
-static inline void iorn_iovecs_init(iorn_iovecs_t *vecs)
+static inline void iorn_iovec_array_init(iorn_iovec_array_t *vecs)
 {
     memset(vecs, 0, sizeof(*vecs));
 }
 
-iorn_negative_errno_t iorn_iovecs_add_vec(iorn_iovecs_t *vecs, iorn_iovec_t *vec, iorn_malloc_t *ma);
-iorn_negative_errno_t iorn_iovecs_resize(iorn_iovecs_t *vecs, size_t nmemb, iorn_malloc_t *ma);
+iorn_negative_errno_t iorn_iovec_array_add_vec(iorn_iovec_array_t *vecs, iorn_iovec_t *vec, iorn_malloc_t *ma);
+iorn_negative_errno_t iorn_iovec_array_resize(iorn_iovec_array_t *vecs, size_t nmemb, iorn_malloc_t *ma);
 
 /**
   Adjust an iovec array after a short read/write.
@@ -114,10 +107,10 @@ iorn_negative_errno_t iorn_iovecs_resize(iorn_iovecs_t *vecs, size_t nmemb, iorn
         vecs[i].iov_base = calloc(1, vecs[i].iov_len);
     }
     size_t advance = 30;
-    vecs_len = iorn_iovecs_adjust_after_short(vecs_len, &vecs, advance, &save_vecs, &save_iov_base);
-    // write code here to retry for a read/write and call iorn_iovecs_adjust_after_short again.
+    vecs_len = iorn_iovec_array_adjust_after_short(vecs_len, &vecs, advance, &save_vecs, &save_iov_base);
+    // write code here to retry for a read/write and call iorn_iovec_array_adjust_after_short again.
     // after a full read/write, restore the size and the buffer.
-    vecs_len = iorn_iovecs_restore_from_short_adjust(vecs_len, &vecs, &save_vecs, &save_iov_base);
+    vecs_len = iorn_iovec_array_restore_from_short_adjust(vecs_len, &vecs, &save_vecs, &save_iov_base);
 }
 
   An example for a struct msghdr:
@@ -132,30 +125,30 @@ iorn_negative_errno_t iorn_iovecs_resize(iorn_iovecs_t *vecs, size_t nmemb, iorn
         h->msg_iov[i].iov_base = calloc(1, h->msg_iov[i].iov_len);
     }
     size_t advance = 30;
-    h->msg_iovlen = iorn_iovecs_adjust_after_short(h->msg_iovlen, &h->msg_iov, advance, &save_vecs, &save_iov_base);
-    // write code here to retry for a read/write and call iorn_iovecs_adjust_after_short again.
+    h->msg_iovlen = iorn_iovec_array_adjust_after_short(h->msg_iovlen, &h->msg_iov, advance, &save_vecs, &save_iov_base);
+    // write code here to retry for a read/write and call iorn_iovec_array_adjust_after_short again.
     // after a full read/write, restore the size and the buffer.
-    h->msg_iovlen = iorn_iovecs_restore_from_short_adjust(h->msg_iovlen, &h->msg_iov, &save_vecs, &save_iov_base);
+    h->msg_iovlen = iorn_iovec_array_restore_from_short_adjust(h->msg_iovlen, &h->msg_iov, &save_vecs, &save_iov_base);
 */
-size_t iorn_iovecs_adjust_after_short(size_t vecs_len, iorn_iovec_t **vecs, size_t advance, iorn_iovec_t **save_vecs, void **save_iov_base);
+size_t iorn_iovec_array_adjust_after_short(size_t vecs_len, iorn_iovec_t **vecs, size_t advance, iorn_iovec_t **save_vecs, void **save_iov_base);
 
 /**
-  Restore an iovec array to the original state before calling iorn_iovecs_adjust_after_short.
-  See iorn_iovecs_adjust_after_short for an example.
+  Restore an iovec array to the original state before calling iorn_iovec_array_adjust_after_short.
+  See iorn_iovec_array_adjust_after_short for an example.
   @param [in]     adjusted_vecs_len   the adjusted length of an iovec array.
   @param [in,out] adjusted_vecs       the adjusted an iovec array.
   @param [in,out] save_vecs           the saved iovec array. *save_vecs must be NULL at first , and must not be modified by user.
   @param [in,out] save_iov_base       the saved base of an iovec. *save_iov_base will be set to NULL.
   @return the original value of vecs_len.
 */
-size_t iorn_iovecs_restore_from_short_adjust(size_t adjusted_vecs_len, iorn_iovec_t **adjusted_vecs, iorn_iovec_t **save_vecs, void **save_iov_base);
+size_t iorn_iovec_array_restore_from_short_adjust(size_t adjusted_vecs_len, iorn_iovec_t **adjusted_vecs, iorn_iovec_t **save_vecs, void **save_iov_base);
 
-static inline void iorn_iovecs_shallow_free_ma(iorn_iovecs_t *vecs, iorn_malloc_t *ma)
+static inline void iorn_iovec_array_shallow_free_ma(iorn_iovec_array_t *vecs, iorn_malloc_t *ma)
 {
     ma->free(vecs->vecs, ma->user_data);
 }
 
-void iorn_iovecs_deep_free_ma(iorn_iovecs_t *vecs, iorn_malloc_t *ma);
+void iorn_iovec_array_deep_free_ma(iorn_iovec_array_t *vecs, iorn_malloc_t *ma);
 
 #ifdef __cplusplus
 }
