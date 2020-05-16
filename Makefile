@@ -1,6 +1,9 @@
 NAME=libiorn
 
-default: all
+default: test
+
+test: all
+	@$(MAKE) -C test runtests
 
 all:
 	@$(MAKE) -C src
