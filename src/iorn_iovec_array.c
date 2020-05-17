@@ -26,7 +26,7 @@ size_t iorn_iovec_restore_from_short_adjust(size_t adjusted_iov_len, void **adju
 
 /* functions for iorn_iovec_array_t */
 
-size_t iorn_iovec_array_total_byte_len(size_t vecs_len, iorn_iovec_t *vecs)
+size_t iorn_iovec_array_total_byte_len(size_t vecs_len, const iorn_iovec_t *vecs)
 {
     size_t total = 0;
     for (int i = 0; i < vecs_len; i++) {

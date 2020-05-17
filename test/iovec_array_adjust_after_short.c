@@ -6,7 +6,7 @@
 #define BUF_LEN 10
 #define NR_VECS 5
 
-static size_t copy_to_iovecs(unsigned nr_vecs, struct iovec *vecs, void *src, size_t nbytes)
+static size_t copy_to_iovecs(size_t nr_vecs, const struct iovec *vecs, const void *src, size_t nbytes)
 {
     size_t copied;
     size_t n;
