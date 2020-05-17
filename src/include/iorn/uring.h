@@ -264,8 +264,6 @@ struct iorn_read_or_write_op {
     unsigned  nbytes_total;
     unsigned  nbytes_done;
     void     *saved_buf;
-    unsigned  saved_nbytes;
-    off_t     saved_offset;
 };
 
 struct iorn_readv_or_writev_op {
@@ -279,7 +277,6 @@ struct iorn_readv_or_writev_op {
 
     size_t        nbytes_total;
     size_t        nbytes_done;
-    int           saved_nr_vecs;
     struct iovec *saved_iovecs;
     void         *saved_iov_base;
     off_t         saved_offset;
@@ -297,7 +294,6 @@ struct iorn_recv_or_send_op {
     size_t  nbytes_total;
     size_t  nbytes_done;
     void   *saved_buf;
-    size_t  saved_len;
 };
 
 struct iorn_recvmsg_or_sendmsg_op {
@@ -310,7 +306,6 @@ struct iorn_recvmsg_or_sendmsg_op {
 
     size_t        nbytes_total;
     size_t        nbytes_done;
-    size_t        saved_iovlen;
     struct iovec *saved_iov;
     void         *saved_iov_base;
 };
@@ -429,12 +424,6 @@ void iorn_handle_short_recv(iorn_queue_t *queue, iorn_recv_or_send_op_t *op);
 void iorn_handle_short_send(iorn_queue_t *queue, iorn_recv_or_send_op_t *op);
 void iorn_handle_short_recvmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op);
 void iorn_handle_short_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op);
-
-/* NOTE: These functions are exported just for testing. */
-void __iorn_adjust_after_short_readv_or_writev(iorn_readv_or_writev_op_t *op, size_t nr_advance);
-void __iorn_restore_after_short_readv_or_writev(iorn_readv_or_writev_op_t *op);
-void __iorn_adjust_after_short_recvmsg_or_sendmsg(iorn_recvmsg_or_sendmsg_op_t *op, size_t nr_advance);
-void __iorn_restore_after_short_recvmsg_or_sendmsg(iorn_recvmsg_or_sendmsg_op_t *op);
 
 #ifdef __cplusplus
 }

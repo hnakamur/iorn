@@ -207,7 +207,6 @@ int iorn_prep_recv(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
     op->nbytes_total = op->len;
     op->nbytes_done = 0;
     op->saved_buf = NULL;
-    op->saved_len = 0;
     return 0;
 }
 
@@ -225,7 +224,6 @@ int iorn_prep_send(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
     op->nbytes_total = op->len;
     op->nbytes_done = 0;
     op->saved_buf = NULL;
-    op->saved_len = 0;
     return 0;
 }
 
@@ -242,7 +240,6 @@ int iorn_prep_recvmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op)
     iorn_prep_common(&op->common, sqe);
     op->nbytes_total = iorn_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
     op->nbytes_done = 0;
-    op->saved_iovlen = 0;
     op->saved_iov = NULL;
     op->saved_iov_base = NULL;
     return 0;
@@ -261,7 +258,6 @@ int iorn_prep_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op)
     iorn_prep_common(&op->common, sqe);
     op->nbytes_total = iorn_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
     op->nbytes_done = 0;
-    op->saved_iovlen = 0;
     op->saved_iov = NULL;
     op->saved_iov_base = NULL;
     return 0;
@@ -281,8 +277,6 @@ int iorn_prep_read(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
     op->nbytes_total = op->nbytes;
     op->nbytes_done = 0;
     op->saved_buf = NULL;
-    op->saved_nbytes = 0;
-    op->saved_offset = 0;
     return 0;
 }
 
@@ -300,8 +294,6 @@ int iorn_prep_write(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
     op->nbytes_total = op->nbytes;
     op->nbytes_done = 0;
     op->saved_buf = NULL;
-    op->saved_nbytes = 0;
-    op->saved_offset = 0;
     return 0;
 }
 
@@ -318,7 +310,6 @@ int iorn_prep_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     iorn_prep_common(&op->common, sqe);
     op->nbytes_total = iorn_iovecs_total_len(op->nr_vecs, op->iovecs);
     op->nbytes_done = 0;
-    op->saved_nr_vecs = 0;
     op->saved_iovecs = NULL;
     op->saved_iov_base = NULL;
     op->saved_offset = 0;
@@ -338,7 +329,6 @@ int iorn_prep_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     iorn_prep_common(&op->common, sqe);
     op->nbytes_total = iorn_iovecs_total_len(op->nr_vecs, op->iovecs);
     op->nbytes_done = 0;
-    op->saved_nr_vecs = 0;
     op->saved_iovecs = NULL;
     op->saved_iov_base = NULL;
     op->saved_offset = 0;
@@ -621,27 +611,6 @@ int iorn_submit(iorn_queue_t *queue)
     }
 }
 
-static void iorn_adjust_after_short_read_or_write(iorn_read_or_write_op_t *op, int32_t nr_advance)
-{
-    if (op->saved_buf == NULL) {
-        op->saved_buf = op->buf;
-        op->saved_nbytes = op->nbytes;
-        op->saved_offset = op->offset;
-    }
-    op->buf += nr_advance;
-    op->nbytes -= nr_advance;
-    op->offset += nr_advance;
-}
-
-static void iorn_restore_after_short_read_or_write(iorn_read_or_write_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_buf != NULL) {
-        op->buf = op->saved_buf;
-        op->nbytes = op->saved_nbytes;
-        op->offset = op->saved_offset;
-    }
-}
-
 void iorn_handle_short_read(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
 {
     int res;
@@ -658,7 +627,8 @@ void iorn_handle_short_read(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        iorn_adjust_after_short_read_or_write(op, res);
+        op->offset += res;
+        op->nbytes = iorn_iovec_adjust_after_short(op->nbytes, (void **) &op->buf, res, &op->saved_buf);
         res = iorn_prep_read(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -666,7 +636,12 @@ void iorn_handle_short_read(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
         return;
     }
 
-    iorn_restore_after_short_read_or_write(op);
+    if (op->nbytes_done == op->nbytes_total) {
+        if (op->saved_buf != NULL) {
+            op->offset -= (char *) op->saved_buf - (char *) op->buf;
+        }
+        op->nbytes = iorn_iovec_restore_from_short_adjust(op->nbytes, (void **) &op->buf, &op->saved_buf);
+    }
 }
 
 void iorn_handle_short_write(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
@@ -685,7 +660,8 @@ void iorn_handle_short_write(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        iorn_adjust_after_short_read_or_write(op, res);
+        op->offset += res;
+        op->nbytes = iorn_iovec_adjust_after_short(op->nbytes, (void **) &op->buf, res, &op->saved_buf);
         res = iorn_prep_write(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -693,24 +669,11 @@ void iorn_handle_short_write(iorn_queue_t *queue, iorn_read_or_write_op_t *op)
         return;
     }
 
-    iorn_restore_after_short_read_or_write(op);
-}
-
-static void iorn_adjust_after_short_recv_or_send(iorn_recv_or_send_op_t *op, size_t nr_advance)
-{
-    if (op->saved_buf == NULL) {
-        op->saved_buf = op->buf;
-        op->saved_len = op->len;
-    }
-    op->buf += nr_advance;
-    op->len -= nr_advance;
-}
-
-static void iorn_restore_after_short_recv_or_send(iorn_recv_or_send_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_buf != NULL) {
-        op->buf = op->saved_buf;
-        op->saved_len = op->len;
+    if (op->nbytes_done == op->nbytes_total) {
+        if (op->saved_buf != NULL) {
+            op->offset -= (char *) op->saved_buf - (char *) op->buf;
+        }
+        op->nbytes = iorn_iovec_restore_from_short_adjust(op->nbytes, (void **) &op->buf, &op->saved_buf);
     }
 }
 
@@ -730,7 +693,7 @@ void iorn_handle_short_recv(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        iorn_adjust_after_short_recv_or_send(op, res);
+        op->len = iorn_iovec_adjust_after_short(op->len, (void **) &op->buf, res, &op->saved_buf);
         res = iorn_prep_recv(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -738,7 +701,9 @@ void iorn_handle_short_recv(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
         return;
     }
 
-    iorn_restore_after_short_recv_or_send(op);
+    if (op->nbytes_done == op->nbytes_total) {
+        op->len = iorn_iovec_restore_from_short_adjust(op->len, (void **) &op->buf, &op->saved_buf);
+    }
 }
 
 void iorn_handle_short_send(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
@@ -757,7 +722,7 @@ void iorn_handle_short_send(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        iorn_adjust_after_short_recv_or_send(op, res);
+        op->len = iorn_iovec_adjust_after_short(op->len, (void **) &op->buf, res, &op->saved_buf);
         res = iorn_prep_send(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -765,58 +730,8 @@ void iorn_handle_short_send(iorn_queue_t *queue, iorn_recv_or_send_op_t *op)
         return;
     }
 
-    iorn_restore_after_short_recv_or_send(op);
-}
-
-/* NOTE: This function is not static for testing. */
-void __iorn_adjust_after_short_readv_or_writev(iorn_readv_or_writev_op_t *op, size_t nr_advance)
-{
-    struct iovec *vec;
-
-    if (op->saved_iovecs == NULL) {
-        op->saved_nr_vecs = op->nr_vecs;
-        op->saved_iovecs = op->iovecs;
-        op->saved_offset = op->offset;
-    }
-    op->offset += nr_advance;
-
-    vec = &op->iovecs[0];
-    if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
-        nr_advance -= vec->iov_len;
-
-        vec->iov_len += vec->iov_base - op->saved_iov_base;
-        vec->iov_base = op->saved_iov_base;
-        op->saved_iov_base = NULL;
-
-        op->nr_vecs--;
-        vec++;
-    }
-    while (nr_advance > 0 && op->nr_vecs > 0 && nr_advance > vec->iov_len) {
-        op->nr_vecs--;
-        vec++;
-        nr_advance -= vec->iov_len;
-    }
-
-    if (nr_advance != 0 && op->saved_iov_base == NULL) {
-        op->saved_iov_base = vec->iov_base;
-    }
-    vec->iov_base += nr_advance;
-    vec->iov_len -= nr_advance;
-    op->iovecs = vec;
-}
-
-/* NOTE: This function is not static for testing. */
-void __iorn_restore_after_short_readv_or_writev(iorn_readv_or_writev_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_iovecs != NULL) {
-        if (op->saved_iov_base != NULL) {
-            op->iovecs[0].iov_len += op->iovecs[0].iov_base - op->saved_iov_base;
-            op->iovecs[0].iov_base = op->saved_iov_base;
-            op->saved_iov_base = NULL;
-        }
-        op->iovecs = op->saved_iovecs;
-        op->nr_vecs = op->saved_nr_vecs;
-        op->offset = op->saved_offset;
+    if (op->nbytes_done == op->nbytes_total) {
+        op->len = iorn_iovec_restore_from_short_adjust(op->len, (void **) &op->buf, &op->saved_buf);
     }
 }
 
@@ -836,7 +751,11 @@ void iorn_handle_short_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        __iorn_adjust_after_short_readv_or_writev(op, res);
+        if (op->saved_iovecs == NULL) {
+            op->saved_offset = op->offset;
+        }
+        op->offset += res;
+        op->nr_vecs = iorn_iovec_array_adjust_after_short(op->nr_vecs, &op->iovecs, res, &op->saved_iovecs, &op->saved_iov_base);
         res = iorn_prep_readv(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -844,7 +763,12 @@ void iorn_handle_short_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
         return;
     }
 
-    __iorn_restore_after_short_readv_or_writev(op);
+    if (op->nbytes_done == op->nbytes_total) {
+        if (op->saved_iovecs != NULL) {
+            op->offset = op->saved_offset;
+        }
+        op->nr_vecs = iorn_iovec_array_restore_from_short_adjust(op->nr_vecs, &op->iovecs, &op->saved_iovecs, &op->saved_iov_base);
+    }
 }
 
 void iorn_handle_short_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
@@ -863,7 +787,11 @@ void iorn_handle_short_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        __iorn_adjust_after_short_readv_or_writev(op, res);
+        if (op->saved_iovecs == NULL) {
+            op->saved_offset = op->offset;
+        }
+        op->offset += res;
+        op->nr_vecs = iorn_iovec_array_adjust_after_short(op->nr_vecs, &op->iovecs, res, &op->saved_iovecs, &op->saved_iov_base);
         res = iorn_prep_writev(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -871,55 +799,11 @@ void iorn_handle_short_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op
         return;
     }
 
-    __iorn_restore_after_short_readv_or_writev(op);
-}
-
-/* NOTE: This function is not static for testing. */
-void __iorn_adjust_after_short_recvmsg_or_sendmsg(iorn_recvmsg_or_sendmsg_op_t *op, size_t nr_advance)
-{
-    struct iovec *vec;
-
-    if (op->saved_iov == NULL) {
-        op->saved_iovlen = op->msg->msg_iovlen;
-        op->saved_iov = op->msg->msg_iov;
-    }
-
-    vec = &op->msg->msg_iov[0];
-    if (nr_advance >= vec->iov_len && op->saved_iov_base != NULL) {
-        nr_advance -= vec->iov_len;
-
-        vec->iov_len += vec->iov_base - op->saved_iov_base;
-        vec->iov_base = op->saved_iov_base;
-        op->saved_iov_base = NULL;
-
-        op->msg->msg_iovlen--;
-        vec++;
-    }
-    while (nr_advance > 0 && op->msg->msg_iovlen > 0 && nr_advance > vec->iov_len) {
-        op->msg->msg_iovlen--;
-        vec++;
-        nr_advance -= vec->iov_len;
-    }
-
-    if (nr_advance != 0 && op->saved_iov_base == NULL) {
-        op->saved_iov_base = vec->iov_base;
-    }
-    vec->iov_base += nr_advance;
-    vec->iov_len -= nr_advance;
-    op->msg->msg_iov = vec;
-}
-
-/* NOTE: This function is not static for testing. */
-void __iorn_restore_after_short_recvmsg_or_sendmsg(iorn_recvmsg_or_sendmsg_op_t *op)
-{
-    if (op->nbytes_done == op->nbytes_total && op->saved_iov != NULL) {
-        if (op->saved_iov_base != NULL) {
-            op->msg->msg_iov[0].iov_len += op->msg->msg_iov[0].iov_base - op->saved_iov_base;
-            op->msg->msg_iov[0].iov_base = op->saved_iov_base;
-            op->saved_iov_base = NULL;
+    if (op->nbytes_done == op->nbytes_total) {
+        if (op->saved_iovecs != NULL) {
+            op->offset = op->saved_offset;
         }
-        op->msg->msg_iov = op->saved_iov;
-        op->msg->msg_iovlen = op->saved_iovlen;
+        op->nr_vecs = iorn_iovec_array_restore_from_short_adjust(op->nr_vecs, &op->iovecs, &op->saved_iovecs, &op->saved_iov_base);
     }
 }
 
@@ -939,7 +823,7 @@ void iorn_handle_short_recvmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        __iorn_adjust_after_short_recvmsg_or_sendmsg(op, res);
+        op->msg->msg_iovlen = iorn_iovec_array_adjust_after_short(op->msg->msg_iovlen, &op->msg->msg_iov, res, &op->saved_iov, &op->saved_iov_base);
         res = iorn_prep_recvmsg(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -947,7 +831,9 @@ void iorn_handle_short_recvmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t
         return;
     }
 
-    __iorn_restore_after_short_recvmsg_or_sendmsg(op);
+    if (op->nbytes_done == op->nbytes_total) {
+        op->msg->msg_iovlen = iorn_iovec_array_restore_from_short_adjust(op->msg->msg_iovlen, &op->msg->msg_iov, &op->saved_iov, &op->saved_iov_base);
+    }
 }
 
 void iorn_handle_short_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op)
@@ -966,7 +852,7 @@ void iorn_handle_short_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t
     }
 
     if (op->nbytes_done < op->nbytes_total) {
-        __iorn_adjust_after_short_recvmsg_or_sendmsg(op, res);
+        op->msg->msg_iovlen = iorn_iovec_array_adjust_after_short(op->msg->msg_iovlen, &op->msg->msg_iov, res, &op->saved_iov, &op->saved_iov_base);
         res = iorn_prep_sendmsg(queue, op);
         if (res < 0) {
             iorn_op_set_err_code(&op->common, -res);
@@ -974,5 +860,7 @@ void iorn_handle_short_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t
         return;
     }
 
-    __iorn_restore_after_short_recvmsg_or_sendmsg(op);
+    if (op->nbytes_done == op->nbytes_total) {
+        op->msg->msg_iovlen = iorn_iovec_array_restore_from_short_adjust(op->msg->msg_iovlen, &op->msg->msg_iov, &op->saved_iov, &op->saved_iov_base);
+    }
 }
