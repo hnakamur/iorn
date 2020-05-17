@@ -19,18 +19,6 @@ static int iorn_get_sqe(iorn_queue_t *queue, struct io_uring_sqe **sqe)
     }
 }
 
-static size_t iorn_iovecs_total_len(size_t nr_vecs, struct iovec *iovecs)
-{
-    size_t i;
-    size_t len;
-
-    len = 0;
-    for (i = 0; i < nr_vecs; i++) {
-        len += iovecs[i].iov_len;
-    }
-    return len;
-}
-
 static inline void iorn_prep_common(iorn_op_common_t *common, struct io_uring_sqe *sqe)
 {
     common->opcode = sqe->opcode;
@@ -238,7 +226,7 @@ int iorn_prep_recvmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op)
     }
     io_uring_prep_recvmsg(sqe, op->fd, op->msg, op->flags);
     iorn_prep_common(&op->common, sqe);
-    op->nbytes_total = iorn_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
+    op->nbytes_total = iorn_iovec_array_total_byte_len(op->msg->msg_iovlen, op->msg->msg_iov);
     op->nbytes_done = 0;
     op->saved_iov = NULL;
     op->saved_iov_base = NULL;
@@ -256,7 +244,7 @@ int iorn_prep_sendmsg(iorn_queue_t *queue, iorn_recvmsg_or_sendmsg_op_t *op)
     }
     io_uring_prep_sendmsg(sqe, op->fd, op->msg, op->flags);
     iorn_prep_common(&op->common, sqe);
-    op->nbytes_total = iorn_iovecs_total_len(op->msg->msg_iovlen, op->msg->msg_iov);
+    op->nbytes_total = iorn_iovec_array_total_byte_len(op->msg->msg_iovlen, op->msg->msg_iov);
     op->nbytes_done = 0;
     op->saved_iov = NULL;
     op->saved_iov_base = NULL;
@@ -308,7 +296,7 @@ int iorn_prep_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     }
     io_uring_prep_readv(sqe, op->fd, op->iovecs, op->nr_vecs, op->offset);
     iorn_prep_common(&op->common, sqe);
-    op->nbytes_total = iorn_iovecs_total_len(op->nr_vecs, op->iovecs);
+    op->nbytes_total = iorn_iovec_array_total_byte_len(op->nr_vecs, op->iovecs);
     op->nbytes_done = 0;
     op->saved_iovecs = NULL;
     op->saved_iov_base = NULL;
@@ -327,7 +315,7 @@ int iorn_prep_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     }
     io_uring_prep_writev(sqe, op->fd, op->iovecs, op->nr_vecs, op->offset);
     iorn_prep_common(&op->common, sqe);
-    op->nbytes_total = iorn_iovecs_total_len(op->nr_vecs, op->iovecs);
+    op->nbytes_total = iorn_iovec_array_total_byte_len(op->nr_vecs, op->iovecs);
     op->nbytes_done = 0;
     op->saved_iovecs = NULL;
     op->saved_iov_base = NULL;
