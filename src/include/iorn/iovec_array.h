@@ -88,6 +88,14 @@ iorn_negative_errno_t iorn_iovec_array_add_vec(iorn_iovec_array_t *vecs, iorn_io
 iorn_negative_errno_t iorn_iovec_array_resize(iorn_iovec_array_t *vecs, size_t nmemb, iorn_malloc_t *ma);
 
 /**
+  Get the total length in bytes of an iovec array.
+  @param [in]     vecs_len       the length of an iovec array.
+  @param [in]     vecs           an iovec array.
+  @return the total length in bytes of an iovec array.
+*/
+size_t iorn_iovec_array_total_byte_len(size_t vecs_len, iorn_iovec_t *vecs);
+
+/**
   Adjust an iovec array after a short read/write.
   @param [in]     vecs_len       the length of an iovec array.
   @param [in,out] vecs           an iovec array.

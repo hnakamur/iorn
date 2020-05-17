@@ -63,6 +63,7 @@ static int test_iorn_iovec_adjust_after_short(void)
 
     iorn_iovec_t *save_vecs = NULL;
     void *save_iov_base = NULL;
+    size_t total_length = iorn_iovec_array_total_byte_len(h.msg_iovlen, h.msg_iov);
     size_t total_copied = 0;
     size_t advances[] = { 5, 16, 0, 9, 11, 9 };
     for (int i = 0; i < sizeof(advances) / sizeof(size_t); i++) {
@@ -80,6 +81,10 @@ static int test_iorn_iovec_adjust_after_short(void)
     //fprintf(stderr, "before restore\n");
     h.msg_iovlen = iorn_iovec_array_restore_from_short_adjust(h.msg_iovlen, &h.msg_iov, &save_vecs, &save_iov_base);
     //fprintf(stderr, "after restore\n");
+    if (total_copied != total_length) {
+        fprintf(stderr, "unmatched total_copied=%ld, total_length=%ld\n",
+                total_copied, total_length);
+    }
 
     for (int i = 0; i < NR_VECS; i++) {
         //fprintf(stderr, "before memcmp i=%d\n", i);
