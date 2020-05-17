@@ -15,9 +15,13 @@ void iorn_malloc_std_free(void *ptr, void *user_data)
     free(ptr);
 }
 
-iorn_malloc_t iorn_malloc_std = {
+static iorn_malloc_t _iorn_malloc_std = {
     .calloc = iorn_malloc_std_calloc,
     .reallocarray = iorn_malloc_std_reallocarray,
     .free = iorn_malloc_std_free,
     .user_data = NULL
 };
+
+const iorn_malloc_t *iorn_malloc_std() {
+    return &_iorn_malloc_std;
+}

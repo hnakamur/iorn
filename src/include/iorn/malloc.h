@@ -24,7 +24,7 @@ void *iorn_malloc_std_calloc(size_t nmemb, size_t size, void *user_data);
 void *iorn_malloc_std_reallocarray(void *ptr, size_t nmemb, size_t size, void *user_data);
 void iorn_malloc_std_free(void *ptr, void *user_data);
 
-extern iorn_malloc_t iorn_malloc_std;
+const iorn_malloc_t *iorn_malloc_std();
 
 #ifdef __cplusplus
 }
