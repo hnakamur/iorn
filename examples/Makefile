@@ -16,7 +16,7 @@ test_srcs := base-cp.c vecs-cp.c link-cp.c webserver.c clock.c
 
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 
-%: %.c
+%: %.c ../src/libiorn.a
 	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ $< -luring -liorn $(XCFLAGS)
 
 clean:

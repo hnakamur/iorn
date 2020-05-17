@@ -25,17 +25,23 @@ include ../Makefile.quiet
 
 all: $(all_targets)
 
-libiorn_srcs := iorn.c
+libiorn_headers := include/iorn.h \
+	include/iorn/error.h \
+	include/iorn/iovec_array.h \
+	include/iorn/malloc.h \
+	include/iorn/uring.h
+
+libiorn_srcs := iorn.c iorn_iovec_array.c iorn_malloc.c
 
 libiorn_objs := $(patsubst %.c,%.ol,$(libiorn_srcs))
 libiorn_sobjs := $(patsubst %.c,%.os,$(libiorn_srcs))
 
-$(libiorn_objs) $(libiorn_sobjs): include/iorn.h
+$(libiorn_objs) $(libiorn_sobjs):
 
-%.os: %.c
+%.os: %.c $(libiorn_headers)
 	$(QUIET_CC)$(CC) $(SO_CFLAGS) -c -o $@ $<
 
-%.ol: %.c
+%.ol: %.c $(libiorn_headers)
 	$(QUIET_CC)$(CC) $(L_CFLAGS) -c -o $@ $<
 
 AR ?= ar

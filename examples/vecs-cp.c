@@ -180,7 +180,6 @@ static void on_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     if (op->common.cqe_res > 0) {
         ctx->write_left -= op->common.cqe_res;
     }
-    fprintf(stderr, "on_writev, cqe_res=%d, write_left=%ld\n", op->common.cqe_res, ctx->write_left);
     iorn_handle_short_writev(queue, op);
     set_err_code(ctx, op->common.err_code);
     if (op->nbytes_done < op->nbytes_total) {
@@ -201,11 +200,9 @@ static void queue_writev(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     copy_ctx_t *ctx;
     int ret;
 
-    // fprintf(stderr, "queue_write start, op=%p\n", op);
     ctx = op->common.op_ctx;
     op->handler = on_writev;
     op->fd = ctx->outfd;
-    // fprintf(stderr, "before iorn_prep_write, op=%p, buf=%p, offset=%ld, nbytes=%d\n", op, op->buf, op->offset, op->nbytes);
     ret = iorn_prep_writev(queue, op);
     if (ret < 0) {
         fprintf(stderr, "iorn_prep_write: %s\n", strerror(-ret));
@@ -220,7 +217,6 @@ static void on_readv(iorn_queue_t *queue, iorn_readv_or_writev_op_t *op)
     if (op->common.cqe_res > 0) {
         ctx->read_left -= op->common.cqe_res;
     }
-    fprintf(stderr, "on_readv, cqe_res=%d, read_left=%ld\n", op->common.cqe_res, ctx->read_left);
     iorn_handle_short_readv(queue, op);
     set_err_code(ctx, op->common.err_code);
     if (op->nbytes_done < op->nbytes_total) {

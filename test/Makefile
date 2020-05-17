@@ -3,7 +3,7 @@ datadir ?= $(prefix)/share
 
 INSTALL=install
 
-CFLAGS ?= -g -O2
+CFLAGS ?= -g -O0
 XCFLAGS =
 #override CFLAGS += -Wall -D_GNU_SOURCE -L../src/ -I../src/include/ -include ../config-host.h -D__SANE_USERSPACE_TYPES__
 override CFLAGS += -Wall -D_GNU_SOURCE -L../src/ -I../src/include/
@@ -14,17 +14,15 @@ ifneq ($(MAKECMDGOALS),clean)
 include ../config-host.mak
 endif
 
-all_targets += adjust_restore_iovecs_readv_or_writev \
-               adjust_restore_iovecs_recvmsg_or_sendmsg
+all_targets += iovec_array_adjust_after_short
 
 all: $(all_targets)
 
-test_srcs := adjust_restore_iovecs_readv_or_writev.c \
-             adjust_restore_iovecs_recvmsg_or_sendmsg.c
+test_srcs := iovec_array_adjust_after_short.c
 
 test_objs := $(patsubst %.c,%.ol,$(test_srcs))
 
-%: %.c
+%: %.c ../src/libiorn.a
 	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ $< -luring -liorn $(XCFLAGS)
 
 clean:
