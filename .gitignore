@@ -1,5 +1,6 @@
 *.ol
 *.os
+core
 
 /src/libiorn.a
 /src/libiorn.so*
@@ -12,6 +13,7 @@
 
 /test/adjust_restore_iovecs_readv_or_writev
 /test/adjust_restore_iovecs_recvmsg_or_sendmsg
+/test/iovec_array_adjust_after_short
 
 config-host.h
 config-host.mak
